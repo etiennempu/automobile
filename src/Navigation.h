@@ -20,23 +20,12 @@ class Navigation
 		Navigation();
 		~Navigation();
 
-		float get_vitesse()
-		{
-			return nav_vitesse;
-		}
+		float get_vitesse();
+		float get_orientation();
+		void set_vitesse(float vitesse);
+		void set_orientation(float orientation);
 
-		float get_orientation()
-		{
-			return nav_orientation;
-		}
-		void set_vitesse(float vitesse)
-		{
-			target_vitesse=vitesse;
-		}
-		void set_orientation(float orientation)
-		{
-			target_orientation=orientation;
-		}
+
 	private:
 		
 		float target_orientation;
@@ -45,6 +34,9 @@ class Navigation
 		float nav_vitesse; 
 		float ecart_orientation();
 		float compute_vitesse ();
+
+		void ecart_orientation();
+		void compute_vitesse ();
 
 };
 

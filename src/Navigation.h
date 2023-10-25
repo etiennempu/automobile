@@ -24,6 +24,7 @@ class Navigation
 		float get_orientation();
 		void set_vitesse(float vitesse);
 		void set_orientation(float orientation);
+		void navigation();
 
 
 	private:
@@ -37,6 +38,7 @@ class Navigation
 
 		void ecart_orientation();
 		void compute_vitesse ();
+		
 
 };
 

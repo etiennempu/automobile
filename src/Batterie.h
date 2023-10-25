@@ -17,10 +17,8 @@ class Batterie
 		Batterie();
 		~Batterie();
 
-		float get_batterie()
-		{
-			return lvl_batterie;
-		}
+		float get_batterie();
+		
 		
 	private:		
 

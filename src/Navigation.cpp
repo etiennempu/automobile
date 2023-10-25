@@ -34,9 +34,11 @@ void Navigation::compute_vitesse ()
 {
     // Faire passer la vitesse à la consigne de manière douce (50 pas)
     float pas  = (consigne_vitesse - vitesse)/ 50;
-    do
-	{
 		vitesse += pas;
 		// pour que ça soit pas instantané 
-	} while (vitesse != consigne_vitesse);
+}
+
+void Navigation::navigation()
+{
+	//
 }

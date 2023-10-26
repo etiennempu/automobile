@@ -64,42 +64,7 @@ int32_t init_timer(struct sigevent* event, struct itimerspec* itime,
 	return timer_settime(*timer, 0, itime, NULL);
 }
 
-/******************************************************************************
- * Task routine
- * Just a dummy task saying hello to the user.
- *****************************************************************************/
-void* task_routine(void* args) {
 
-	struct timespec tp;
-	sem_t*          sync_sem;
-	uint32_t        task_id;
-	uint32_t        starttime;
-	uint32_t        elapsed_time;
-
-	/* Get the arguments */
-	sync_sem  = ((thread_args_t*)args)->semaphore;
-	task_id   = ((thread_args_t*)args)->id;
-	starttime = ((thread_args_t*)args)->starttime;
-
-	/* Routine loop */
-	while(1<2) {
-		/* Wait for the pulse handler to release the semaphore */
-		if(0 == sem_wait(sync_sem)) {
-			/* Get the current time */
-			if(0 == clock_gettime(CLOCK_REALTIME, &tp)) {
-				elapsed_time = tp.tv_sec - starttime;
-				printf("Hello from task %d at %d\n", task_id, elapsed_time);
-			}
-			else {
-				/* Print error */
-				printf("Task %d could not get time: %d\n", task_id, errno);
-			}
-		}
-		else {
-			printf("Task %d could not wait semaphore: %d\n", task_id, errno);
-		}
-	}
-}
 
 /******************************************************************************
  * Task pulse handler routine

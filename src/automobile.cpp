@@ -127,7 +127,7 @@ void* Take_photo(void* data)
 }
 
 
-void* Navigation(void* data){
+void Navigation(void* data){
     /*
     * Role : recuperer en permanence les donnees, les print et mettre a jours les consignes
     */
@@ -219,15 +219,56 @@ void* print_state(void* data){
     /*
     * Role : monitorer les valeurs
     */
-    TaskData *d = static_cast<TaskData*>(data);
+   	void **params = (void **)data;
 
-	cout << endl << "Etat voiture :" << endl;
-	cout << "--> Vitesse     :" << d->Vitesse << "km/h" << endl;
-	cout << "--> Position    : (" << d->Position.x << ", " << d->Position.y << ")" << endl;
-	cout << "--> Orientation : " << d->Orientation << " degre" << endl;
-	cout << "--> Batterie    : " << d->LvlBatterie << endl;
-	cout << "--> NextDest    : (" << d->Next_dest.x << ", " << d->Next_dest.y << ") %" << endl;
+    TaskData *d = static_cast<TaskData*>(params[0]);
 
+	struct timespec tp;
+	sem_t*          sync_sem;
+	uint32_t        task_id;
+	uint32_t        starttime;
+	uint32_t        elapsed_time;
+
+	/* Get the arguments */
+	sync_sem  = ((thread_args_t*)params[1])->semaphore;
+	task_id   = ((thread_args_t*)params[1])->id;
+	starttime = ((thread_args_t*)params[1])->starttime;
+	uint32_t max_execution_time = MAX_EXECUTION_TIME;
+	uint32_t endtime = starttime + max_execution_time;
+
+	
+	/* Routine loop */
+	while(1) {
+		/* Wait for the pulse handler to release the semaphore */
+		if(0 == sem_wait(sync_sem)) {
+			/* Get the current time */
+			if(0 == clock_gettime(CLOCK_REALTIME, &tp)) {
+				elapsed_time = tp.tv_sec - starttime;
+				
+				cout << endl << "Etat voiture :" << endl;
+				cout << "--> Vitesse     :" << d->Vitesse << "km/h" << endl;
+				cout << "--> Position    : (" << d->Position.x << ", " << d->Position.y << ")" << endl;
+				cout << "--> Orientation : " << d->Orientation << " degre" << endl;
+				cout << "--> Batterie    : " << d->LvlBatterie << endl;
+				cout << "--> NextDest    : (" << d->Next_dest.x << ", " << d->Next_dest.y << ") %" << endl;
+
+				if (tp.tv_sec >= endtime) {
+                    printf("Task %d has completed execution.\n", task_id);
+                    break; // Exit the loop
+                }
+
+			}
+			else {
+				/* Print error */
+				printf("Task %d could not get time: %d\n", task_id, errno);
+			}
+		}
+		else {
+			printf("Task %d could not wait semaphore: %d\n", task_id, errno);
+		}
+	}
+
+	
 }
 
 
@@ -264,6 +305,11 @@ int main(void) {
 		
 	continious_t globalmutex;
 	initContinious_t(&globalmutex);
+
+	srand (time(NULL));
+    
+    TaskData *data = new TaskData;  
+    const char* image_generee; 
 
 	
 
@@ -375,6 +421,9 @@ int main(void) {
 		printf("Could not create channel: %d\n", errno);
 		return EXIT_FAILURE;
 	}
+	void *params[2];
+	params[0] = data;
+	params[1] = &task_control_args;
 
 	/* Create the different tasks and their associated pulse handlers */
 	if(0 != pthread_create(&task_control, NULL, task_routine, &task_control_args)) {
@@ -394,14 +443,16 @@ int main(void) {
 		printf("Could not create thread: %d\n", errno);
 		return EXIT_FAILURE;
 	}
-	if(0 != pthread_create(&task_photo_pulse_handler, NULL,
-			               task_pulse_handler, &task_photo_args)) {
+	if(0 != pthread_create(&task_photo_pulse_handler, NULL, task_pulse_handler, &task_photo_args)) {
 		/* Print error */
 		printf("Could not create thread: %d\n", errno);
 		return EXIT_FAILURE;
 	}
 
-		if(0 != pthread_create(&task_print, NULL, task_routine, &task_print_args)) {
+	void *params_print[2];
+	params_print[0] = data;
+	params_print[1] = &task_print_args;
+	if(0 != pthread_create(&task_print, NULL, task_routine, params_print)) {
 		/* Print error */
 		printf("Could not create thread: %d\n", errno);
 		return EXIT_FAILURE;

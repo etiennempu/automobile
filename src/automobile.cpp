@@ -18,7 +18,6 @@ using namespace std;
 //durée de la simulation en seconde
 #define MAX_EXECUTION_TIME 1000
 
-#define 
 
 // Data structure used for the task data
 struct TaskData {
@@ -93,7 +92,7 @@ void* Take_photo(void* data)
     */
 	void **params = (void **)data;
 
-    TaskData *d = static_cast<TaskData*>(params[0]);
+    TaskData *d = static_cast<TaskData*>((TaskData*)params[0]);
 
 	struct timespec tp;
 	sem_t*          sync_sem;
@@ -120,14 +119,14 @@ void* Take_photo(void* data)
 			    // Prendre une photo
 				if (compute_distance(d->LastPhotos,d->Position) >= 18)
 				{
-					d->My_PathMap.savePhoto(d->Position);
+					//d->My_PathMap.savePhoto(d->Position);
 					d->LastPhotos = d->Position;
-					ttAnalogOut(CTRL_ANALYSE_PH, 1);
+					//ttAnalogOut(CTRL_ANALYSE_PH, 1);
 
 					// Analyse terminee --> Ne plus prendre photo
 					if(d->AnalyseTerminee == 1)
 					{
-					ttAnalogOut(CTRL_ANALYSE_PH, 0);
+						//ttAnalogOut(CTRL_ANALYSE_PH, 0);
 					}
 
 				}
@@ -159,20 +158,19 @@ void Navigation(TaskData* data){
     TaskData *d = static_cast<TaskData*>(data);
 
 	// recuperation des donnees
-	d->Vitesse = ttAnalogIn(VITESSE);
+	//d->Vitesse = ttAnalogIn(VITESSE);
 	coord_t Position;
-	Position.x = ttAnalogIn(POS_X);
-	Position.y = ttAnalogIn(POS_Y);
+	//Position.x = ttAnalogIn(POS_X);
+	//Position.y = ttAnalogIn(POS_Y);
 	d->Position = Position;
-	d->Orientation = ttAnalogIn(ORIENTATION);
-	d->LvlBatterie = ttAnalogIn(LEVEL_BATTERIE);
-	d->AnalyseTerminee = ttAnalogIn(ANALYSE_TERMINEE);
+	//d->Orientation = ttAnalogIn(ORIENTATION);
+	//d->LvlBatterie = ttAnalogIn(LEVEL_BATTERIE);
+	//d->AnalyseTerminee = ttAnalogIn(ANALYSE_TERMINEE);
 
-	pthread_join(FSM_Tid, NULL);
 
 	// send ouputs to operative system
-	ttAnalogOut(CTRL_VITESSE, d->Next_vitesse);
-	ttAnalogOut(CTRL_ORIENTATION, d->Next_orientation);
+	//ttAnalogOut(CTRL_VITESSE, d->Next_vitesse);
+	//ttAnalogOut(CTRL_ORIENTATION, d->Next_orientation);
 }
 
 void* FSM(void* data){
@@ -181,7 +179,7 @@ void* FSM(void* data){
     */
    	void **params = (void **)data;
 
-    TaskData *d = static_cast<TaskData*>(params[0]);
+    TaskData *d = static_cast<TaskData*>((TaskData*)params[0]);
 
 	struct timespec tp;
 	sem_t*          sync_sem;
@@ -195,9 +193,8 @@ void* FSM(void* data){
 	starttime = ((thread_args_t*)params[1])->starttime;
 	uint32_t max_execution_time = MAX_EXECUTION_TIME;
 	uint32_t endtime = starttime + max_execution_time;
-    TaskData *d = static_cast<TaskData*>(data);
 
-	int run=1:
+	int run=1;
 	/* Routine loop */
 	while(run==1) {
 
@@ -207,7 +204,7 @@ void* FSM(void* data){
 			if(0 == clock_gettime(CLOCK_REALTIME, &tp)) {
 				elapsed_time = tp.tv_sec - starttime;
 
-			Navigation(params[0]);
+			//Navigation(d);
             // Calcul de la nouvelle orientation a prendre
             d->Next_orientation = compute_orientation(d->Position, d->Next_dest);
 
@@ -244,7 +241,7 @@ void* FSM(void* data){
                 	if ((d->FinalDest.x == d->Next_dest.x) && (d->FinalDest.y == d->Next_dest.y))
 					{
 						d->Next_vitesse = 0;
-						mexPrintf("\n arrivee dest finale : Wait 60 s\n");
+						cout << endl << "arrivee dest finale : Wait 60 s:" << endl;
 						d->My_PathMap.genDest(d->Position, d->FinalDest);
 						d->My_PathMap.genWp(d->Position, d->FinalDest, d->Next_dest);
 						d->final_dest++;
@@ -254,8 +251,8 @@ void* FSM(void* data){
 					else if (d->EtatBatterie)
 					{   
 						d->Next_vitesse = 0;             
-						mexPrintf("\nArrivee a une borne\n");
-						ttAnalogOut(CTRL_CHARGE, true);
+						cout << endl << "Arrivé a une borne :" << endl;
+						//ttAnalogOut(CTRL_CHARGE, true);
 						d->EtatBatterie = false ;
 	
 					}
@@ -263,7 +260,7 @@ void* FSM(void* data){
 					else 
 					{                
 						d->Next_vitesse = 80;
-						mexPrintf("\nArrivee a un wp\n");
+						cout << endl << "Arrivee a un wp" << endl;
 						d->My_PathMap.genWp(d->Position, d->FinalDest, d->Next_dest);   
 					} 
 
@@ -295,7 +292,7 @@ void* print_state(void* data){
     */
    	void **params = (void **)data;
 
-    TaskData *d = static_cast<TaskData*>(params[0]);
+    TaskData *d = static_cast<TaskData*>((TaskData*)params[0]);
 
 	struct timespec tp;
 	sem_t*          sync_sem;
@@ -345,19 +342,73 @@ void* print_state(void* data){
 	
 }
 
+void* systemeContinu(void* data){
+    /*
+    * Role : modéliser le systeme continu
+    */
+   	void **params = (void **)data;
+
+    TaskData *d = static_cast<TaskData*>((TaskData*)params[0]);
+
+	struct timespec tp;
+	sem_t*          sync_sem;
+	uint32_t        task_id;
+	uint32_t        starttime;
+	uint32_t        elapsed_time;
+
+	/* Get the arguments */
+	task_id   = ((thread_args_t*)params[1])->id;
+	starttime = ((thread_args_t*)params[1])->starttime;
+	uint32_t max_execution_time = MAX_EXECUTION_TIME;
+	uint32_t endtime = starttime + max_execution_time;
+
+	int run=1;
+	/* Routine loop */
+	while(run==1) 
+	{
+			/* Get the current time */
+			if(0 == clock_gettime(CLOCK_REALTIME, &tp)) 
+			{
+				if (ctrl_charge == true)
+				{
+					
+				}
+
+
+
+
+				// mettre a jours le temps d'execution
+				elapsed_time = tp.tv_sec - starttime;
+				
+				if (tp.tv_sec >= endtime) 
+				{
+                    printf("Task %d has completed execution.\n", task_id);
+                    run=0;; // Exit the loop
+                }
+
+			}
+			else 
+			{
+				/* Print error */
+				printf("Task %d could not get time: %d\n", task_id, errno);
+			}
+		
+	}
+
+}
+
 
 void* alarm_10(void* data) {
     /*
     * Role : s'execute en cas d'alarme 10% de batterie
     */
-    TaskData *d = static_cast<TaskData*>(data);
+    /*TaskData *d = static_cast<TaskData*>(data);
 
 	cout << "Alarme 10%" << endl;
 	// mettre a jours les nouvelles valeurs
 	d->Next_vitesse = 50;
 	d->My_PathMap.getClosestStation(d->Position, d->Next_dest);
-	d->EtatBatterie = true ;
-	pthread_join(FSM_Tid, NULL);
+	d->EtatBatterie = true ;*/
 
 }
 
@@ -365,12 +416,12 @@ void* alarm_80(void* data) {
     /*
     * Role : s'execute en cas d'alarme 80% de batterie
     */
-    TaskData *d = static_cast<TaskData*>(data);
+    /*TaskData *d = static_cast<TaskData*>(data);
 	cout << "Alarme 80%" << endl;
 	ttAnalogOut(CTRL_CHARGE, false);
 	d->Next_vitesse = 80;
 	d->My_PathMap.genWp(d->Position, d->FinalDest, d->Next_dest);
-	pthread_join(FSM_Tid, NULL);
+	*/
 }
 int main(void) {
 
@@ -385,12 +436,12 @@ int main(void) {
     TaskData *data = new TaskData;  
     const char* image_generee; 
 
-	data->myNav= new Navigation;
+	//data->myNav.Navigation();
 
 	coord_t Position;
 
-	data->myNav.set;
-	Position.y = ttAnalogIn(POS_Y);
+	//data->myNav.set;
+	//Position.y = ttAnalogIn(POS_Y);
 	data->Position = Position;
 	data->My_PathMap.genDest(data->Position, data->FinalDest); // donner la destination finale initiale
 	data->My_PathMap.genWp(data->Position, data->FinalDest, data->Next_dest);
@@ -442,8 +493,6 @@ int main(void) {
 	thread_args_t task_continus_args;
 
 
-
-
 	/* Get the start time */
 	if(0 != clock_gettime(CLOCK_REALTIME, &tp)) {
 		/* Print error */
@@ -490,7 +539,7 @@ int main(void) {
 	}
 
 	task_print_args.id   = 2;
-	task_print_args.semaphore = &task_print_args;
+	task_print_args.semaphore = &task_print_sync;
 	task_print_args.starttime = tp.tv_sec;
 	task_print_args.chid      = ChannelCreate(0);
 	if(-1 == task_print_args.chid) {
@@ -499,7 +548,7 @@ int main(void) {
 		return EXIT_FAILURE;
 	}
 	task_continus_args.id   = 3;
-	task_continus_args.semaphore = &task_continus_args;
+	task_continus_args.semaphore = &task_continus_sync;
 	task_continus_args.starttime = tp.tv_sec;
 	task_continus_args.chid      = ChannelCreate(0);
 
@@ -510,7 +559,7 @@ int main(void) {
 	}
 
 	void *params_control[2];
-	params_control[0] = data;
+	params_control[0] = &data;
 	params_control[1] = &task_control_args;
 
 	/* Create the different tasks and their associated pulse handlers */
@@ -560,7 +609,7 @@ int main(void) {
 	void *params_continus[2];
 	params_continus[0] = data;
 	params_continus[1] = &task_print_args;
-	if(0 != pthread_create(&task_continus, NULL, print_continus, params_continus)) {
+	if(0 != pthread_create(&task_continus, NULL, systemeContinu, params_continus)) {
 		/* Print error */
 		printf("Could not create thread: %d\n", errno);
 		return EXIT_FAILURE;
@@ -644,7 +693,5 @@ int main(void) {
 		return EXIT_FAILURE;
 	}
 
-
-
-	return EXIT_SUCCESS;
+	//return EXIT_SUCCESS;
 }

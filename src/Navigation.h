@@ -11,39 +11,38 @@
 #include <pthread.h> /* pthread_mutex_t, pthread_cond_t */
 #include <iostream>
 #include "genMap.h"
+#include "sysContinu.h"
 
 
 
 class Navigation
 {
 	public:
-		Navigation();
-		~Navigation();
-
-		float get_vitesse();
-		float get_orientation();
-		void set_vitesse(float vitesse);
-		void set_orientation(float orientation);
-		float get_batterie();
-
-		void* systemeContinu(void* args);
-
-
-	private:
+		/* les ancirnc
 		
-		float lvl_batterie = 60;
-
+		float lvl_batterie;
 		float target_orientation;
 		float nav_orientation;
 		float target_vitesse;
 		float nav_vitesse; 
+		*/
+		
 
+		// input
+		float pos;
+		float vitesse;
+		float orientation;
+		float lvl_batterie;
+		// output
+		float ctrl_charge;
+		float ctrl_vitesse;
+		float ctrl_orientation;
+		
 		void orientation();
 		void vitesse ();
-		float compute_batterie();
+		void compute_batterie();
 		void recharge_batterie ();
 
-		
 
 };
 

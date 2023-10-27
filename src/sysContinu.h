@@ -11,9 +11,8 @@
 #include <pthread.h> /* pthread_mutex_t, pthread_cond_t */
 #include <iostream>
 
-#include "automobile.h"
 #include "Navigation.h"
-#include "Batterie.h"
+
 
 
 typedef struct continious{

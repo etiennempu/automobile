@@ -19,7 +19,6 @@ class Navigation
 {
 	public:
 		/* les anciens
-		
 		float lvl_batterie;
 		float target_orientation;
 		float nav_orientation;
@@ -27,9 +26,8 @@ class Navigation
 		float nav_vitesse; 
 		*/
 		
-
 		// input
-		float pos;
+		coord_t pos;
 		float vitesse;
 		float orientation;
 		float lvl_batterie;
@@ -37,6 +35,8 @@ class Navigation
 		bool ctrl_charge;
 		float ctrl_vitesse;
 		float ctrl_orientation;
+		// alarm
+		bool alarm10;
 		
 		void compute_orientation();
 		void compute_vitesse ();
@@ -45,8 +45,7 @@ class Navigation
 
 		// permet de lire
 		bool read_ctrl_charge();
-
-
+		bool read_alarm10();
 };
 
 #endif

@@ -4,8 +4,9 @@
 #include "genMap.h"
 #include <cmath>    // Pour avoir des fonctions mathematiques
 #include "sysContinu.h"
-#include "timer.h"
+// #include "timer.h"
 #include "Navigation.h"
+#include <semaphore.h>
 using namespace std;
 
 
@@ -40,7 +41,6 @@ struct TaskData {
     float Next_orientation;
     coord_t Next_dest;  //coordonnees de la nouvelle destination
 	Navigation my_Nav;
-	continious_t *my_cont;
 };
 
 float compute_orientation(coord_t Position, coord_t Next_Dest) {
@@ -159,34 +159,34 @@ void Navigation2(TaskData* data){
     TaskData *d = static_cast<TaskData*>(data);
 
 	// recuperation des donnees
-	pthread_mutex_lock(d->my_cont->mtx_vitesse);	//pas d'auto-complétion... C'est bisarre
+	pthread_mutex_lock(&globalmutex.mtx_vitesse);	//pas d'auto-complétion... C'est bisarre
 	d->Vitesse = d->my_Nav.vitesse;	//d->Vitesse = ttAnalogIn(VITESSE);
-	pthread_mutex_unlock(d->my_cont->mtx_vitesse);
+	pthread_mutex_unlock(&globalmutex.mtx_vitesse);
 
-	pthread_mutex_lock(d->my_cont->mtx_pos);
+	pthread_mutex_lock(&globalmutex.mtx_pos);
 	d->Position = d->my_Nav.pos;
-	pthread_mutex_unlock(d->my_cont->mtx_pos);
+	pthread_mutex_unlock(&globalmutex.mtx_pos);
 
-	pthread_mutex_lock(d->my_cont->mtx_orientation);
+	pthread_mutex_lock(&globalmutex.mtx_orientation);
 	d->Orientation = d->my_Nav.orientation;
-	pthread_mutex_unlock(d->my_cont->mtx_orientation);
+	pthread_mutex_unlock(&globalmutex.mtx_orientation);
 
-	pthread_mutex_lock(d->my_cont->mtx_lvl_batterie);
+	pthread_mutex_lock(&globalmutex.mtx_lvl_batterie);
 	d->LvlBatterie = d->my_Nav.lvl_batterie;
-	pthread_mutex_unlock(d->my_cont->mtx_lvl_batterie);
+	pthread_mutex_unlock(&globalmutex.mtx_lvl_batterie);
 
 
 	//d->AnalyseTerminee = ttAnalogIn(ANALYSE_TERMINEE);  Voir quoi faire avec ça
 
 
 	// send ouputs to operative system
-	pthread_mutex_lock(d->my_cont->mtx_ctrl_vitesse);
+	pthread_mutex_lock(&globalmutex.mtx_ctrl_vitesse);
 	d->my_Nav.ctrl_vitesse = d->Next_vitesse;
-	pthread_mutex_unlock(d->my_cont->mtx_ctrl_vitesse);
+	pthread_mutex_unlock(&globalmutex.mtx_ctrl_vitesse);
 
-	pthread_mutex_lock(d->my_cont->mtx_ctrl_orientation);
+	pthread_mutex_lock(&globalmutex.mtx_ctrl_orientation);
 	d->my_Nav.orientation = d->Next_orientation;
-	pthread_mutex_unlock(d->my_cont->mtx_ctrl_orientation);
+	pthread_mutex_unlock(&globalmutex.mtx_ctrl_orientation);
 }
 
 void* FSM(void* data){
@@ -268,9 +268,9 @@ void* FSM(void* data){
 					{   
 						d->Next_vitesse = 0;             
 						cout << endl << "Arrivé a une borne :" << endl;
-						pthread_mutex_lock(d->my_cont->mtx_ctrl_charge);
+						pthread_mutex_lock(&globalmutex.mtx_ctrl_charge);
 						d->my_Nav.ctrl_charge = 1; //ttAnalogOut(CTRL_CHARGE, true);
-						pthread_mutex_unlock(d->my_cont->mtx_ctrl_charge);
+						pthread_mutex_unlock(&globalmutex.mtx_ctrl_charge);
 						
 						d->EtatBatterie = false ;
 	
@@ -388,17 +388,30 @@ void* systemeContinu(void* data){
 			/* Get the current time */
 			if(0 == clock_gettime(CLOCK_REALTIME, &tp)) 
 			{
-				//cas de recharge de batterie (si )
-				if ( d->my_Nav.read_ctrl_charge()== true)
+				//----------------------------- Partie effective -------------------------
+				//cas de recharge de batterie
+				if ( d->my_Nav.read_ctrl_charge() == true)
 				{
 					d->my_Nav.recharge_batterie();
+					pthread_join(alarm_80, NULL); 
+				}
+				
+				// cas plus de batterie
+				if (d->my_Nav.read_alarm10() == true )
+				{
+					// repasser l'alarme10 à 0
+					pthread_mutex_lock(&globalmutex.mtx_alarm10);
+					d->my_Nav.alarm10 = false;
+					pthread_mutex_unlock(&globalmutex.mtx_alarm10);
+					//lancer le thread d'alarme
+					pthread_join(alarm_10, NULL); 
 				}
 
 				d->my_Nav.compute_batterie();
 				d->my_Nav.compute_orientation();
 				d->my_Nav.compute_vitesse();
-
-
+							
+				//----------------------------- Fin partie effective ----------------------
 
 				// mettre a jours le temps d'execution
 				elapsed_time = tp.tv_sec - starttime;
@@ -425,13 +438,13 @@ void* alarm_10(void* data) {
     /*
     * Role : s'execute en cas d'alarme 10% de batterie
     */
-    /*TaskData *d = static_cast<TaskData*>(data);
+    TaskData *d = static_cast<TaskData*>(data);
 
 	cout << "Alarme 10%" << endl;
 	// mettre a jours les nouvelles valeurs
 	d->Next_vitesse = 50;
 	d->My_PathMap.getClosestStation(d->Position, d->Next_dest);
-	d->EtatBatterie = true ;*/
+	d->EtatBatterie = true ;
 
 }
 
@@ -439,12 +452,14 @@ void* alarm_80(void* data) {
     /*
     * Role : s'execute en cas d'alarme 80% de batterie
     */
-    /*TaskData *d = static_cast<TaskData*>(data);
+    TaskData *d = static_cast<TaskData*>(data);
 	cout << "Alarme 80%" << endl;
-	ttAnalogOut(CTRL_CHARGE, false);
+	pthread_mutex_lock(&globalmutex.mtx_ctrl_charge);
+	d->my_Nav.ctrl_charge = 0; //ttAnalogOut(CTRL_CHARGE, true);
+	pthread_mutex_unlock(&globalmutex.mtx_ctrl_charge);
 	d->Next_vitesse = 80;
 	d->My_PathMap.genWp(d->Position, d->FinalDest, d->Next_dest);
-	*/
+	
 }
 int main(void) {
 
@@ -494,6 +509,9 @@ int main(void) {
 	pthread_t task_print_pulse_handler;
 	pthread_t task_continus;
 	pthread_t task_continus_pulse_handler;
+	//alarm
+	pthread_t alarm_10;	// a creer avec pthread_create
+	pthread_t alarm_80; //
 
 	/* Timers event structures */
 	struct sigevent   task_control_event;

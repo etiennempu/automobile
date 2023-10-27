@@ -24,20 +24,25 @@ class Navigation
 		float get_orientation();
 		void set_vitesse(float vitesse);
 		void set_orientation(float orientation);
-		void navigation();
+		float get_batterie();
+
+		void* systemeContinu(void* args);
 
 
 	private:
 		
+		float lvl_batterie = 60;
+
 		float target_orientation;
 		float nav_orientation;
 		float target_vitesse;
 		float nav_vitesse; 
-		float ecart_orientation();
-		float compute_vitesse ();
 
-		void ecart_orientation();
-		void compute_vitesse ();
+		void orientation();
+		void vitesse ();
+		float compute_batterie();
+		void recharge_batterie ();
+
 		
 
 };

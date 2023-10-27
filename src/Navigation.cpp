@@ -20,25 +20,54 @@ void Navigation::set_orientation(float orientation)
 	target_orientation=orientation;
 }
 
-void Navigation::ecart_orientation()
+void Navigation::orientation()
 {
+	
     //  symbolise le fait que la voiture dévie naturellement de son axe
-
-    float new_orientation;
     float random = ((float(rand()) / float(RAND_MAX)) * (3 - 4)) + 4;
     nav_orientation += random;
+	
  
 }
 
-void Navigation::compute_vitesse ()
+void Navigation::vitesse ()
 {
     // Faire passer la vitesse à la consigne de manière douce (50 pas)
-    float pas  = (consigne_vitesse - vitesse)/ 50;
-		vitesse += pas;
+    float pas  = (target_vitesse - vitesse)/ 50;
+	nav_vitesse += pas;
 		// pour que ça soit pas instantané 
 }
 
-void Navigation::navigation()
+void Navigation::compute_batterie()
 {
-	//
+	// calcule le niveau de batterie dans 20 m
+	// (en supposant que la voiture consomme 0.1% de batterie par km
+	float next_batterie;
+	float vitesse =  nav.get_vitesse();
+	lvl_batterie =  lvl_batterie- (lvl_batterie * (0.1 * vitesse / 3.6)*100);
+	
 }
+
+void Navigation::recharge_batterie (float* batterie)
+{
+	while(lvl_batterie<80){
+		
+		lvl_batterie += 3;
+
+	}
+	
+}
+
+float Navigation::get_batterie()
+{
+	return lvl_batterie;
+}
+
+void* Navigation::systemeContinu(void* args)
+{
+
+	orientation();
+	vitesse();
+
+}
+

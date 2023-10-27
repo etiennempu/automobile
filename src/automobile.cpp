@@ -39,7 +39,8 @@ struct TaskData {
     float Next_vitesse;
     float Next_orientation;
     coord_t Next_dest;  //coordonnees de la nouvelle destination
-	Navigation myNav;
+	Navigation my_Nav;
+	continious_t *my_cont;
 };
 
 float compute_orientation(coord_t Position, coord_t Next_Dest) {
@@ -151,26 +152,41 @@ void* Take_photo(void* data)
 }
 
 
-void Navigation(TaskData* data){
+void Navigation2(TaskData* data){
     /*
     * Role : recuperer en permanence les donnees, les print et mettre a jours les consignes
     */
     TaskData *d = static_cast<TaskData*>(data);
 
 	// recuperation des donnees
-	//d->Vitesse = ttAnalogIn(VITESSE);
-	coord_t Position;
-	//Position.x = ttAnalogIn(POS_X);
-	//Position.y = ttAnalogIn(POS_Y);
-	d->Position = Position;
-	//d->Orientation = ttAnalogIn(ORIENTATION);
-	//d->LvlBatterie = ttAnalogIn(LEVEL_BATTERIE);
-	//d->AnalyseTerminee = ttAnalogIn(ANALYSE_TERMINEE);
+	pthread_mutex_lock(d->my_cont->mtx_vitesse);	//pas d'auto-complétion... C'est bisarre
+	d->Vitesse = d->my_Nav.vitesse;	//d->Vitesse = ttAnalogIn(VITESSE);
+	pthread_mutex_unlock(d->my_cont->mtx_vitesse);
+
+	pthread_mutex_lock(d->my_cont->mtx_pos);
+	d->Position = d->my_Nav.pos;
+	pthread_mutex_unlock(d->my_cont->mtx_pos);
+
+	pthread_mutex_lock(d->my_cont->mtx_orientation);
+	d->Orientation = d->my_Nav.orientation;
+	pthread_mutex_unlock(d->my_cont->mtx_orientation);
+
+	pthread_mutex_lock(d->my_cont->mtx_lvl_batterie);
+	d->LvlBatterie = d->my_Nav.lvl_batterie;
+	pthread_mutex_unlock(d->my_cont->mtx_lvl_batterie);
+
+
+	//d->AnalyseTerminee = ttAnalogIn(ANALYSE_TERMINEE);  Voir quoi faire avec ça
 
 
 	// send ouputs to operative system
-	//ttAnalogOut(CTRL_VITESSE, d->Next_vitesse);
-	//ttAnalogOut(CTRL_ORIENTATION, d->Next_orientation);
+	pthread_mutex_lock(d->my_cont->mtx_ctrl_vitesse);
+	d->my_Nav.ctrl_vitesse = d->Next_vitesse;
+	pthread_mutex_unlock(d->my_cont->mtx_ctrl_vitesse);
+
+	pthread_mutex_lock(d->my_cont->mtx_ctrl_orientation);
+	d->my_Nav.orientation = d->Next_orientation;
+	pthread_mutex_unlock(d->my_cont->mtx_ctrl_orientation);
 }
 
 void* FSM(void* data){
@@ -204,7 +220,7 @@ void* FSM(void* data){
 			if(0 == clock_gettime(CLOCK_REALTIME, &tp)) {
 				elapsed_time = tp.tv_sec - starttime;
 
-			//Navigation(d);
+			Navigation2(d);
             // Calcul de la nouvelle orientation a prendre
             d->Next_orientation = compute_orientation(d->Position, d->Next_dest);
 
@@ -252,7 +268,10 @@ void* FSM(void* data){
 					{   
 						d->Next_vitesse = 0;             
 						cout << endl << "Arrivé a une borne :" << endl;
-						//ttAnalogOut(CTRL_CHARGE, true);
+						pthread_mutex_lock(d->my_cont->mtx_ctrl_charge);
+						d->my_Nav.ctrl_charge = 1; //ttAnalogOut(CTRL_CHARGE, true);
+						pthread_mutex_unlock(d->my_cont->mtx_ctrl_charge);
+						
 						d->EtatBatterie = false ;
 	
 					}
@@ -369,11 +388,15 @@ void* systemeContinu(void* data){
 			/* Get the current time */
 			if(0 == clock_gettime(CLOCK_REALTIME, &tp)) 
 			{
-				if (ctrl_charge == true)
+				//cas de recharge de batterie (si )
+				if ( d->my_Nav.read_ctrl_charge()== true)
 				{
-					
+					d->my_Nav.recharge_batterie();
 				}
 
+				d->my_Nav.compute_batterie();
+				d->my_Nav.compute_orientation();
+				d->my_Nav.compute_vitesse();
 
 
 

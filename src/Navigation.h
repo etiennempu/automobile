@@ -18,7 +18,7 @@
 class Navigation
 {
 	public:
-		/* les ancirnc
+		/* les anciens
 		
 		float lvl_batterie;
 		float target_orientation;
@@ -34,14 +34,17 @@ class Navigation
 		float orientation;
 		float lvl_batterie;
 		// output
-		float ctrl_charge;
+		bool ctrl_charge;
 		float ctrl_vitesse;
 		float ctrl_orientation;
 		
-		void orientation();
-		void vitesse ();
+		void compute_orientation();
+		void compute_vitesse ();
 		void compute_batterie();
 		void recharge_batterie ();
+
+		// permet de lire
+		bool read_ctrl_charge();
 
 
 };

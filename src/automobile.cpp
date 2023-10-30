@@ -393,16 +393,14 @@ void* systemeContinu(void* data){
 				if ( d->my_Nav.read_ctrl_charge() == true)
 				{
 					d->my_Nav.recharge_batterie();
+					// attendre que la batterie soit pleine
+					while (d->my_Nav.read_alarm80() == false){}					
 					pthread_join(alarm_80, NULL); 
 				}
 				
 				// cas plus de batterie
 				if (d->my_Nav.read_alarm10() == true )
 				{
-					// repasser l'alarme10 à 0
-					pthread_mutex_lock(&globalmutex.mtx_alarm10);
-					d->my_Nav.alarm10 = false;
-					pthread_mutex_unlock(&globalmutex.mtx_alarm10);
 					//lancer le thread d'alarme
 					pthread_join(alarm_10, NULL); 
 				}
@@ -440,6 +438,11 @@ void* alarm_10(void* data) {
     */
     TaskData *d = static_cast<TaskData*>(data);
 
+	// repasser l'alarme10 à 0
+	pthread_mutex_lock(&globalmutex.mtx_alarm10);
+	d->my_Nav.alarm10 = false;
+	pthread_mutex_unlock(&globalmutex.mtx_alarm10);
+
 	cout << "Alarme 10%" << endl;
 	// mettre a jours les nouvelles valeurs
 	d->Next_vitesse = 50;
@@ -453,6 +456,12 @@ void* alarm_80(void* data) {
     * Role : s'execute en cas d'alarme 80% de batterie
     */
     TaskData *d = static_cast<TaskData*>(data);
+
+	// repasser l'alarme80 à 0
+	pthread_mutex_lock(&globalmutex.mtx_alarm80);
+	d->my_Nav.alarm80 = false;
+	pthread_mutex_unlock(&globalmutex.mtx_alarm80);
+
 	cout << "Alarme 80%" << endl;
 	pthread_mutex_lock(&globalmutex.mtx_ctrl_charge);
 	d->my_Nav.ctrl_charge = 0; //ttAnalogOut(CTRL_CHARGE, true);

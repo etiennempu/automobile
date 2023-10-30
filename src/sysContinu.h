@@ -25,8 +25,9 @@ typedef struct continious{
 	pthread_mutex_t mtx_ctrl_charge;
 	pthread_mutex_t mtx_ctrl_vitesse;
 	pthread_mutex_t mtx_ctrl_orientation;
-    // alarm 10 (pas besoin pour 80 car légère triche)
+    // alarm 10
     pthread_mutex_t mtx_alarm10;
+    pthread_mutex_t mtx_alarm80;
 
 } continious_t;
 
@@ -62,6 +63,10 @@ void initContinious_t(continious_t *data) {
     }
     if (pthread_mutex_init(&data->mtx_alarm10, NULL) != 0) {
         perror("Erreur d'initialisation du mutex alarm10");
+        exit(EXIT_FAILURE);
+    }
+    if (pthread_mutex_init(&data->mtx_alarm80, NULL) != 0) {
+        perror("Erreur d'initialisation du mutex alarm80");
         exit(EXIT_FAILURE);
     }
 }

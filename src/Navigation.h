@@ -37,6 +37,7 @@ class Navigation
 		float ctrl_orientation;
 		// alarm
 		bool alarm10;
+		bool alarm80;
 		
 		void compute_orientation();
 		void compute_vitesse ();
@@ -46,6 +47,7 @@ class Navigation
 		// permet de lire
 		bool read_ctrl_charge();
 		bool read_alarm10();
+		bool read_alarm80();
 };
 
 #endif

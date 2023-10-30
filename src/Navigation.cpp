@@ -70,6 +70,16 @@ bool Navigation::read_alarm10()
 	
 }
 
+bool Navigation::read_alarm80()
+{
+	// Permet de lire ctrl_charge avec le mutex
+	pthread_mutex_lock(&globalmutex.mtx_alarm80);
+	bool buffer = alarm80;
+	pthread_mutex_unlock(&globalmutex.mtx_alarm80);
+	return buffer;
+	
+}
+
 bool Navigation::read_ctrl_charge()
 {
 	// Permet de lire ctrl_charge avec le mutex
@@ -88,7 +98,10 @@ void Navigation::recharge_batterie ()
 		lvl_batterie += 3;
 	}
 	pthread_mutex_unlock(&globalmutex.mtx_lvl_batterie);
-	
+	// avertir que la batterie est pleine
+	pthread_mutex_lock(&globalmutex.mtx_alarm80);
+	alarm80 = true;
+	pthread_mutex_unlock(&globalmutex.mtx_alarm80);
 }
 
 

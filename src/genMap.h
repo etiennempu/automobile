@@ -1,5 +1,14 @@
+
+
 #ifndef __GEN_MAP_H__
 #define __GEN_MAP_H__
+
+#include <iostream>
+#include <cmath>
+#include <random>
+#include <cstring>
+#include <time.h>
+
 
 #define SIMU_ACCEL 1
 

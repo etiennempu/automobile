@@ -7,11 +7,22 @@
  * 
  * ********************************************/
 
-#include <cstdint>   /* Generic types */
-#include <pthread.h> /* pthread_mutex_t, pthread_cond_t */
+ /* Generic types */
+/* pthread_mutex_t, pthread_cond_t */
+
+
 #include <iostream>
-#include "genMap.h"
-#include "sysContinu.h"
+#include <cmath>
+#include <random>
+#include <cstring>
+#include <time.h>
+
+typedef struct
+{
+    double x;
+    double y;
+} coord_s;
+
 
 
 
@@ -27,7 +38,7 @@ class Navigation
 		*/
 		
 		// input
-		coord_t pos;
+		coord_s pos;
 		float vitesse;
 		float orientation;
 		float lvl_batterie;

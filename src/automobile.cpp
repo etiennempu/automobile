@@ -1,10 +1,9 @@
-#include <cstdint>   /* Generic types */
-#include <pthread.h> /* pthread_mutex_t, pthread_cond_t */
-#include <iostream>
+  /* Generic types */ /* pthread_mutex_t, pthread_cond_t */
+
 #include "genMap.h"
 #include <cmath>    // Pour avoir des fonctions mathematiques
 #include "sysContinu.h"
-// #include "timer.h"
+#include "timer.h"
 #include "Navigation.h"
 #include <semaphore.h>
 using namespace std;
@@ -22,7 +21,7 @@ using namespace std;
 
 // Data structure used for the task data
 struct TaskData {
-    coord_t Position;
+	coord_t Position;
     coord_t OldPosition;
     float Vitesse;
     float Orientation;
@@ -42,6 +41,346 @@ struct TaskData {
     coord_t Next_dest;  //coordonnees de la nouvelle destination
 	Navigation my_Nav;
 };
+void* alarm_80(void* data);
+void* alarm_10(void* data);
+void* print_state(void* data);
+void* FSM(void* data);
+void Navigation2(TaskData* data);
+void* Take_photo(void* data);
+float compute_distance(coord_t Position, coord_t Next_dest);
+float compute_orientation(coord_t Position, coord_t Next_Dest);
+void* systemeContinu(void* data);
+
+continious_t globalmutex;
+
+int main(void) {
+
+	cout << "Starting simulation " << endl;
+
+
+	initContinious_t(&globalmutex);
+
+	srand (time(NULL));
+
+    TaskData *data = new TaskData;
+
+	//data->myNav.Navigation();
+
+	coord_t Position;
+	Position.x=0;
+	Position.y=0;
+
+
+
+	data->LvlBatterie=60;
+	data->Position = Position;
+	data->My_PathMap.genDest(data->Position, data->FinalDest); // donner la destination finale initiale
+	data->My_PathMap.genWp(data->Position, data->FinalDest, data->Next_dest);
+	data->Next_orientation = compute_orientation(data->Position, data->Next_dest);
+	// commencer a se mettre en routes
+	data->Next_vitesse = 80;
+	data->LastPhotos = data->Position;
+	data->EtatBatterie = false ;
+	//data->final_dest=0;
+
+	/////timer
+	struct timespec tp;
+
+	/* Semaphores for pulse synchronization */
+	sem_t task_control_sync;
+	sem_t task_photo_sync;
+	sem_t task_print_sync;
+	sem_t task_continus_sync;
+
+
+	/* PThread structures */
+	pthread_t task_control;
+	pthread_t task_control_pulse_handler;
+	pthread_t task_photo;
+	pthread_t task_photo_pulse_handler;
+	pthread_t task_print;
+	pthread_t task_print_pulse_handler;
+	pthread_t task_continus;
+	pthread_t task_continus_pulse_handler;
+
+
+	/* Timers event structures */
+	struct sigevent   task_control_event;
+	struct itimerspec task_control_itime;
+	timer_t           task_control_timer;
+	struct sigevent   task_photo_event;
+	struct itimerspec task_photo_itime;
+	timer_t           task_photo_timer;
+	struct sigevent   task_print_event;
+	struct itimerspec task_print_itime;
+	timer_t           task_print_timer;
+	struct sigevent   task_continus_event;
+	struct itimerspec task_continus_itime;
+	timer_t           task_continus_timer;
+
+
+	/* Priorité */
+    // Créez une structure sched_param pour spécifier la priorité
+    struct sched_param continus_param;
+    struct sched_param control_param;
+    struct sched_param photo_param;
+    struct sched_param print_param;
+
+    continus_param.sched_priority = 50; // Priorité élevée pour la tâche continus
+    control_param.sched_priority = 30;  // Priorité moyenne pour la tâche de contrôle
+    photo_param.sched_priority = 30;    // Priorité basse pour la tâche de photo
+    print_param.sched_priority = 20;    // Priorité moyenne pour la tâche d'impression
+
+	//les attributs de planification avec les priorités
+    pthread_attr_t continus_attr;
+	pthread_attr_t control_attr;
+	pthread_attr_t photo_attr;
+	pthread_attr_t print_attr;
+
+	// Initialisation des attributs
+	pthread_attr_init(&continus_attr);
+	pthread_attr_init(&control_attr);
+	pthread_attr_init(&photo_attr);
+	pthread_attr_init(&print_attr);
+
+	// les priorités pour les attributs de planification
+	pthread_attr_setschedpolicy(&continus_attr, SCHED_RR);
+	pthread_attr_setschedparam(&continus_attr, &continus_param);
+
+	pthread_attr_setschedpolicy(&control_attr, SCHED_RR);
+	pthread_attr_setschedparam(&control_attr, &control_param);
+
+	pthread_attr_setschedpolicy(&photo_attr, SCHED_RR);
+	pthread_attr_setschedparam(&photo_attr, &photo_param);
+
+	pthread_attr_setschedpolicy(&print_attr, SCHED_RR);
+	pthread_attr_setschedparam(&print_attr, &print_param);
+
+
+	/* Tasks arguments */
+	thread_args_t task_control_args;
+	thread_args_t task_photo_args;
+	thread_args_t task_print_args;
+	thread_args_t task_continus_args;
+
+
+	/* Get the start time */
+	if(0 != clock_gettime(CLOCK_REALTIME, &tp)) {
+		/* Print error */
+		printf("Could not get start time: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+
+	/* Initialize the semaphore */
+	if(0 != sem_init(&task_control_sync, 0, 0)) {
+		/* Print error */
+		printf("Could not get init semaphore: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+	if(0 != sem_init(&task_photo_sync, 0, 0)) {
+		/* Print error */
+		printf("Could not get init semaphore: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+		if(0 != sem_init(&task_print_sync, 0, 0)) {
+		/* Print error */
+		printf("Could not get init semaphore: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+		if(0 != sem_init(&task_continus_sync, 0, 0)) {
+		/* Print error */
+		printf("Could not get init semaphore: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+
+	/* Initialize the tasks arguments */
+	task_control_args.id   = 0;
+	task_control_args.semaphore = &task_control_sync;
+	task_control_args.starttime = tp.tv_sec;
+	task_control_args.chid      = ChannelCreate(0);
+	if(-1 == task_control_args.chid) {
+		/* Print error */
+		printf("Could not create channel: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+
+	task_photo_args.id   = 1;
+	task_photo_args.semaphore = &task_photo_sync;
+	task_photo_args.starttime = tp.tv_sec;
+	task_photo_args.chid      = ChannelCreate(0);
+	if(-1 == task_photo_args.chid) {
+		/* Print error */
+		printf("Could not create channel: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+
+	task_print_args.id   = 2;
+	task_print_args.semaphore = &task_print_sync;
+	task_print_args.starttime = tp.tv_sec;
+	task_print_args.chid      = ChannelCreate(0);
+	if(-1 == task_print_args.chid) {
+		/* Print error */
+		printf("Could not create channel: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+	task_continus_args.id   = 3;
+	task_continus_args.semaphore = &task_continus_sync;
+	task_continus_args.starttime = tp.tv_sec;
+	task_continus_args.chid      = ChannelCreate(0);
+
+	if(-1 == task_continus_args.chid) {
+		/* Print error */
+		printf("Could not create channel: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+
+	void *params_control[2];
+	params_control[0] = &data;
+	params_control[1] = &task_control_args;
+
+	/* Create the different tasks and their associated pulse handlers */
+	if(0 != pthread_create(&task_control, &control_attr, FSM, params_control)) {
+		/* Print error */
+		printf("Could not create thread: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+	if(0 != pthread_create(&task_control_pulse_handler, NULL,
+			               task_pulse_handler, &task_control_args)) {
+		/* Print error */
+		printf("Could not create thread: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+
+	void *params_photo[2];
+	params_photo[0] = data;
+	params_photo[1] = &task_photo_args;
+
+	if(0 != pthread_create(&task_photo, &photo_attr, Take_photo, params_control)) {
+		/* Print error */
+		printf("Could not create thread: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+	if(0 != pthread_create(&task_photo_pulse_handler, NULL,
+							task_pulse_handler, &task_photo_args)) {
+		/* Print error */
+		printf("Could not create thread: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+
+	void *params_print[2];
+	params_print[0] = data;
+	params_print[1] = &task_print_args;
+	if(0 != pthread_create(&task_print, &print_attr, print_state, params_print)) {
+		/* Print error */
+		printf("Could not create thread: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+	if(0 != pthread_create(&task_print_pulse_handler, NULL,
+			               task_pulse_handler, &task_print_args)) {
+		/* Print error */
+		printf("Could not create thread: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+
+	void *params_continus[2];
+	params_continus[0] = data;
+	params_continus[1] = &task_continus_args;
+	if(0 != pthread_create(&task_continus, &continus_attr, systemeContinu, params_continus)) {
+		/* Print error */
+		printf("Could not create thread: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+	if(0 != pthread_create(&task_continus_pulse_handler, NULL,
+			               task_pulse_handler, &task_continus_args)) {
+		/* Print error */
+		printf("Could not create thread: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+
+	/* Create timers */
+	if(0 != init_timer(&task_control_event, &task_control_itime, &task_control_timer,
+			           task_control_args.chid, CTRL_TASK_PERIOD)) {
+		/* Print error */
+		printf("Could not create timer: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+	if(0 != init_timer(&task_photo_event, &task_photo_itime, &task_photo_timer,
+			           task_photo_args.chid, CTRL_PHOTO_PERIOD)) {
+		/* Print error */
+		printf("Could not create timer: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+
+	if(0 != init_timer(&task_print_event, &task_print_itime, &task_print_timer,
+			           task_print_args.chid, CTRL_PRINT_PERIOD)) {
+		/* Print error */
+		printf("Could not create timer: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+
+	if(0 != init_timer(&task_continus_event, &task_continus_itime, &task_continus_timer,
+			           task_print_args.chid, CTRL_CONTINUS_PERIOD)) {
+		/* Print error */
+		printf("Could not create timer: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+
+	/* Wait for the threads to finish */
+	if(0 != pthread_join(task_control, NULL)) {
+		/* Print error */
+		printf("Could not wait for thread: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+	if(0 != pthread_join(task_control_pulse_handler, NULL)) {
+		/* Print error */
+		printf("Could not wait for thread: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+	if(0 != pthread_join(task_photo, NULL)) {
+		/* Print error */
+		printf("Could not wait for thread: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+	if(0 != pthread_join(task_photo_pulse_handler, NULL)) {
+		/* Print error */
+		printf("Could not wait for thread: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+
+	if(0 != pthread_join(task_print, NULL)) {
+		/* Print error */
+		printf("Could not wait for thread: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+	if(0 != pthread_join(task_print_pulse_handler, NULL)) {
+		/* Print error */
+		printf("Could not wait for thread: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+
+	if(0 != pthread_join(task_continus, NULL)) {
+		/* Print error */
+		printf("Could not wait for thread: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+	if(0 != pthread_join(task_continus_pulse_handler, NULL)) {
+		/* Print error */
+		printf("Could not wait for thread: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+
+    pthread_attr_destroy(&continus_attr);
+    pthread_attr_destroy(&control_attr);
+    pthread_attr_destroy(&photo_attr);
+    pthread_attr_destroy(&print_attr);
+
+	data->My_PathMap.dumpImage("test.bmp"); // generer l'image finale
+	delete data;
+
+
+
+	//return EXIT_SUCCESS;
+}
 
 float compute_orientation(coord_t Position, coord_t Next_Dest) {
     float delta_x = Next_Dest.x - Position.x;
@@ -120,7 +459,7 @@ void* Take_photo(void* data)
 			    // Prendre une photo
 				if (compute_distance(d->LastPhotos,d->Position) >= 18)
 				{
-					//d->My_PathMap.savePhoto(d->Position);
+					d->My_PathMap.takePhoto(d->Position);
 					d->LastPhotos = d->Position;
 					//ttAnalogOut(CTRL_ANALYSE_PH, 1);
 
@@ -164,7 +503,8 @@ void Navigation2(TaskData* data){
 	pthread_mutex_unlock(&globalmutex.mtx_vitesse);
 
 	pthread_mutex_lock(&globalmutex.mtx_pos);
-	d->Position = d->my_Nav.pos;
+	d->Position.x = d->my_Nav.pos.x;
+	d->Position.y = d->my_Nav.pos.y;
 	pthread_mutex_unlock(&globalmutex.mtx_pos);
 
 	pthread_mutex_lock(&globalmutex.mtx_orientation);
@@ -186,8 +526,11 @@ void Navigation2(TaskData* data){
 
 	pthread_mutex_lock(&globalmutex.mtx_ctrl_orientation);
 	d->my_Nav.orientation = d->Next_orientation;
+	printf("Next orientation: %f\n",d->Next_orientation);
+
 	pthread_mutex_unlock(&globalmutex.mtx_ctrl_orientation);
 }
+
 
 void* FSM(void* data){
     /*
@@ -212,10 +555,12 @@ void* FSM(void* data){
 
 	int run=1;
 	/* Routine loop */
-	while(run==1) {
 
+	while(run==1) {
+		printf("Hello from FSM\n");
 		/* Wait for the pulse handler to release the semaphore */
 		if(0 == sem_wait(sync_sem)) {
+
 			/* Get the current time */
 			if(0 == clock_gettime(CLOCK_REALTIME, &tp)) {
 				elapsed_time = tp.tv_sec - starttime;
@@ -305,6 +650,7 @@ void* FSM(void* data){
 	
 }
 
+
 void* print_state(void* data){
     /*
     * Role : monitorer les valeurs
@@ -361,76 +707,6 @@ void* print_state(void* data){
 	
 }
 
-void* systemeContinu(void* data){
-    /*
-    * Role : modéliser le systeme continu
-    */
-   	void **params = (void **)data;
-
-    TaskData *d = static_cast<TaskData*>((TaskData*)params[0]);
-
-	struct timespec tp;
-	sem_t*          sync_sem;
-	uint32_t        task_id;
-	uint32_t        starttime;
-	uint32_t        elapsed_time;
-
-	/* Get the arguments */
-	task_id   = ((thread_args_t*)params[1])->id;
-	starttime = ((thread_args_t*)params[1])->starttime;
-	uint32_t max_execution_time = MAX_EXECUTION_TIME;
-	uint32_t endtime = starttime + max_execution_time;
-
-	int run=1;
-	/* Routine loop */
-	while(run==1) 
-	{
-			/* Get the current time */
-			if(0 == clock_gettime(CLOCK_REALTIME, &tp)) 
-			{
-				//----------------------------- Partie effective -------------------------
-				//cas de recharge de batterie
-				if ( d->my_Nav.read_ctrl_charge() == true)
-				{
-					d->my_Nav.recharge_batterie();
-					// attendre que la batterie soit pleine
-					while (d->my_Nav.read_alarm80() == false){}					
-					pthread_join(alarm_80, NULL); 
-				}
-				
-				// cas plus de batterie
-				if (d->my_Nav.read_alarm10() == true )
-				{
-					//lancer le thread d'alarme
-					pthread_join(alarm_10, NULL); 
-				}
-
-				d->my_Nav.compute_batterie();
-				d->my_Nav.compute_orientation();
-				d->my_Nav.compute_vitesse();
-							
-				//----------------------------- Fin partie effective ----------------------
-
-				// mettre a jours le temps d'execution
-				elapsed_time = tp.tv_sec - starttime;
-				
-				if (tp.tv_sec >= endtime) 
-				{
-                    printf("Task %d has completed execution.\n", task_id);
-                    run=0;; // Exit the loop
-                }
-
-			}
-			else 
-			{
-				/* Print error */
-				printf("Task %d could not get time: %d\n", task_id, errno);
-			}
-		
-	}
-
-}
-
 
 void* alarm_10(void* data) {
     /*
@@ -468,280 +744,96 @@ void* alarm_80(void* data) {
 	pthread_mutex_unlock(&globalmutex.mtx_ctrl_charge);
 	d->Next_vitesse = 80;
 	d->My_PathMap.genWp(d->Position, d->FinalDest, d->Next_dest);
-	
+
 }
-int main(void) {
 
-	cout << "Starting simulation " << endl;
+void* systemeContinu(void* data){
+    /*
+    * Role : modéliser le systeme continu
+    */
 
-		
-	continious_t globalmutex;
-	initContinious_t(&globalmutex);
+   	void **params = (void **)data;
 
-	srand (time(NULL));
-    
-    TaskData *data = new TaskData;  
-    const char* image_generee; 
+    TaskData *d = static_cast<TaskData*>((TaskData*)params[0]);
 
-	//data->myNav.Navigation();
-
-	coord_t Position;
-
-	//data->myNav.set;
-	//Position.y = ttAnalogIn(POS_Y);
-	data->Position = Position;
-	data->My_PathMap.genDest(data->Position, data->FinalDest); // donner la destination finale initiale
-	data->My_PathMap.genWp(data->Position, data->FinalDest, data->Next_dest);
-	data->Next_orientation = compute_orientation(data->Position, data->Next_dest);
-	// commencer a se mettre en routes
-	data->Next_vitesse = 80;
-	data->LastPhotos = data->Position;
-	data->EtatBatterie = false ;
-	data->final_dest=0;
-
-	/////timer
-	struct timespec tp;
-
-	/* Semaphores for pulse synchronization */
-	sem_t task_control_sync;
-	sem_t task_photo_sync;
-	sem_t task_print_sync;
-	sem_t task_continus_sync;
-
-
-	/* PThread structures */
-	pthread_t task_control;
-	pthread_t task_control_pulse_handler;
-	pthread_t task_photo;
-	pthread_t task_photo_pulse_handler;
-	pthread_t task_print;
-	pthread_t task_print_pulse_handler;
-	pthread_t task_continus;
-	pthread_t task_continus_pulse_handler;
 	//alarm
-	pthread_t alarm_10;	// a creer avec pthread_create
-	pthread_t alarm_80; //
+	pthread_t t_alarm_10;	// a creer avec pthread_create
+	pthread_t t_alarm_80; //
 
-	/* Timers event structures */
-	struct sigevent   task_control_event;
-	struct itimerspec task_control_itime;
-	timer_t           task_control_timer;
-	struct sigevent   task_photo_event;
-	struct itimerspec task_photo_itime;
-	timer_t           task_photo_timer;
-	struct sigevent   task_print_event;
-	struct itimerspec task_print_itime;
-	timer_t           task_print_timer;
-	struct sigevent   task_continus_event;
-	struct itimerspec task_continus_itime;
-	timer_t           task_continus_timer;
+	struct timespec tp;
+	sem_t*          sync_sem;
+	uint32_t        task_id;
+	uint32_t        starttime;
+	uint32_t        elapsed_time;
 
-	/* Tasks arguments */
-	thread_args_t task_control_args;
-	thread_args_t task_photo_args;
-	thread_args_t task_print_args;
-	thread_args_t task_continus_args;
+	/* Get the arguments */
+	task_id   = ((thread_args_t*)params[1])->id;
+	starttime = ((thread_args_t*)params[1])->starttime;
+	uint32_t max_execution_time = MAX_EXECUTION_TIME;
+	uint32_t endtime = starttime + max_execution_time;
 
-
-	/* Get the start time */
-	if(0 != clock_gettime(CLOCK_REALTIME, &tp)) {
-		/* Print error */
-		printf("Could not get start time: %d\n", errno);
-		return EXIT_FAILURE;
+	if(0 != pthread_create(&t_alarm_10, NULL, alarm_10, d)) {
+			/* Print error */
+			printf("Could not create thread: %d\n", errno);
+			//return EXIT_FAILURE;
+	}
+	if(0 != pthread_create(&t_alarm_80, NULL, alarm_80, d)) {
+			/* Print error */
+			printf("Could not create thread: %d\n", errno);
+			//return EXIT_FAILURE;
 	}
 
-	/* Initialize the semaphore */
-	if(0 != sem_init(&task_control_sync, 0, 0)) {
-		/* Print error */
-		printf("Could not get init semaphore: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-	if(0 != sem_init(&task_photo_sync, 0, 0)) {
-		/* Print error */
-		printf("Could not get init semaphore: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-		if(0 != sem_init(&task_print_sync, 0, 0)) {
-		/* Print error */
-		printf("Could not get init semaphore: %d\n", errno);
-		return EXIT_FAILURE;
+	int run=1;
+	/* Routine loop */
+	while(run==1) 
+	{
+
+			/* Get the current time */
+			if(0 == clock_gettime(CLOCK_REALTIME, &tp)) 
+			{
+				//----------------------------- Partie effective -------------------------
+				//cas de recharge de batterie
+				if ( d->my_Nav.read_ctrl_charge() == true)
+				{
+					d->my_Nav.recharge_batterie();
+					// attendre que la batterie soit pleine
+					while (d->my_Nav.read_alarm80() == false){}					
+					pthread_join(t_alarm_80, NULL);
+				}
+				
+				// cas plus de batterie
+				if (d->my_Nav.read_alarm10() == true )
+				{
+					//lancer le thread d'alarme
+					pthread_join(t_alarm_10, NULL);
+				}
+
+				d->my_Nav.compute_batterie();
+				d->my_Nav.compute_orientation();
+				d->my_Nav.compute_vitesse();
+							
+				//----------------------------- Fin partie effective ----------------------
+
+				// mettre a jours le temps d'execution
+				elapsed_time = tp.tv_sec - starttime;
+				
+				if (tp.tv_sec >= endtime) 
+				{
+                    printf("Task %d has completed execution.\n", task_id);
+                    run=0;; // Exit the loop
+                }
+
+			}
+			else 
+			{
+				/* Print error */
+				printf("Task %d could not get time: %d\n", task_id, errno);
+			}
+		
 	}
 
-	/* Initialize the tasks arguments */
-	task_control_args.id   = 0;
-	task_control_args.semaphore = &task_control_sync;
-	task_control_args.starttime = tp.tv_sec;
-	task_control_args.chid      = ChannelCreate(0);
-	if(-1 == task_control_args.chid) {
-		/* Print error */
-		printf("Could not create channel: %d\n", errno);
-		return EXIT_FAILURE;
-	}
 
-	task_photo_args.id   = 1;
-	task_photo_args.semaphore = &task_photo_sync;
-	task_photo_args.starttime = tp.tv_sec;
-	task_photo_args.chid      = ChannelCreate(0);
-	if(-1 == task_photo_args.chid) {
-		/* Print error */
-		printf("Could not create channel: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-
-	task_print_args.id   = 2;
-	task_print_args.semaphore = &task_print_sync;
-	task_print_args.starttime = tp.tv_sec;
-	task_print_args.chid      = ChannelCreate(0);
-	if(-1 == task_print_args.chid) {
-		/* Print error */
-		printf("Could not create channel: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-	task_continus_args.id   = 3;
-	task_continus_args.semaphore = &task_continus_sync;
-	task_continus_args.starttime = tp.tv_sec;
-	task_continus_args.chid      = ChannelCreate(0);
-
-	if(-1 == task_continus_args.chid) {
-		/* Print error */
-		printf("Could not create channel: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-
-	void *params_control[2];
-	params_control[0] = &data;
-	params_control[1] = &task_control_args;
-
-	/* Create the different tasks and their associated pulse handlers */
-	if(0 != pthread_create(&task_control, NULL, FSM, params_control)) {
-		/* Print error */
-		printf("Could not create thread: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-	if(0 != pthread_create(&task_control_pulse_handler, NULL,
-			               task_pulse_handler, &task_control_args)) {
-		/* Print error */
-		printf("Could not create thread: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-
-	void *params_photo[2];
-	params_photo[0] = data;
-	params_photo[1] = &task_control_args;
-
-	if(0 != pthread_create(&task_photo, NULL, Take_photo, params_control)) {
-		/* Print error */
-		printf("Could not create thread: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-	if(0 != pthread_create(&task_photo_pulse_handler, NULL, 
-							task_pulse_handler, &task_photo_args)) {
-		/* Print error */
-		printf("Could not create thread: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-
-	void *params_print[2];
-	params_print[0] = data;
-	params_print[1] = &task_print_args;
-	if(0 != pthread_create(&task_print, NULL, print_state, params_print)) {
-		/* Print error */
-		printf("Could not create thread: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-	if(0 != pthread_create(&task_print_pulse_handler, NULL,
-			               task_pulse_handler, &task_print_args)) {
-		/* Print error */
-		printf("Could not create thread: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-
-	void *params_continus[2];
-	params_continus[0] = data;
-	params_continus[1] = &task_print_args;
-	if(0 != pthread_create(&task_continus, NULL, systemeContinu, params_continus)) {
-		/* Print error */
-		printf("Could not create thread: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-	if(0 != pthread_create(&task_continus_pulse_handler, NULL,
-			               task_pulse_handler, &task_continus_args)) {
-		/* Print error */
-		printf("Could not create thread: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-
-	/* Create timers */
-	if(0 != init_timer(&task_control_event, &task_control_itime, &task_control_timer,
-			           task_control_args.chid, CTRL_TASK_PERIOD)) {
-		/* Print error */
-		printf("Could not create timer: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-	if(0 != init_timer(&task_photo_event, &task_photo_itime, &task_photo_timer,
-			           task_photo_args.chid, CTRL_PHOTO_PERIOD)) {
-		/* Print error */
-		printf("Could not create timer: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-
-	if(0 != init_timer(&task_print_event, &task_print_itime, &task_print_timer,
-			           task_print_args.chid, CTRL_PRINT_PERIOD)) {
-		/* Print error */
-		printf("Could not create timer: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-
-	if(0 != init_timer(&task_continus_event, &task_continus_itime, &task_continus_timer,
-			           task_print_args.chid, CTRL_CONTINUS_PERIOD)) {
-		/* Print error */
-		printf("Could not create timer: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-
-	/* Wait for the threads to finish */
-	if(0 != pthread_join(task_control, NULL)) {
-		/* Print error */
-		printf("Could not wait for thread: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-	if(0 != pthread_join(task_control_pulse_handler, NULL)) {
-		/* Print error */
-		printf("Could not wait for thread: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-	if(0 != pthread_join(task_photo, NULL)) {
-		/* Print error */
-		printf("Could not wait for thread: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-	if(0 != pthread_join(task_photo_pulse_handler, NULL)) {
-		/* Print error */
-		printf("Could not wait for thread: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-
-	if(0 != pthread_join(task_print, NULL)) {
-		/* Print error */
-		printf("Could not wait for thread: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-	if(0 != pthread_join(task_print_pulse_handler, NULL)) {
-		/* Print error */
-		printf("Could not wait for thread: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-
-	if(0 != pthread_join(task_continus, NULL)) {
-		/* Print error */
-		printf("Could not wait for thread: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-	if(0 != pthread_join(task_continus_pulse_handler, NULL)) {
-		/* Print error */
-		printf("Could not wait for thread: %d\n", errno);
-		return EXIT_FAILURE;
-	}
-
-	//return EXIT_SUCCESS;
 }
+
+
+

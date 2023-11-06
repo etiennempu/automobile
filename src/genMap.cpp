@@ -1,8 +1,3 @@
-#include <iostream>
-#include <cmath>
-#include <random>
-#include <cstring>
-#include <time.h>
 
 #include "genMap.h"
 

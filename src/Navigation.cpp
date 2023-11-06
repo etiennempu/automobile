@@ -1,4 +1,7 @@
 #include "Navigation.h"
+#include "sysContinu.h"
+
+
 
 
 
@@ -31,10 +34,13 @@ void Navigation::compute_vitesse ()
 
     // Faire passer la vitesse à la consigne de manière douce (50 pas)
 	pthread_mutex_lock(&globalmutex.mtx_vitesse);
-    float pas  = (ctrl_vitesse_buffer - vitesse)/ 50;
-	while ( vitesse != ctrl_vitesse_buffer)
+	if ( vitesse < ctrl_vitesse_buffer)
 	{
-		vitesse += pas;
+		vitesse += 5;
+	}
+	else if ( vitesse > ctrl_vitesse_buffer)
+	{
+		vitesse -= 5;
 	}
 	pthread_mutex_lock(&globalmutex.mtx_vitesse);
 }

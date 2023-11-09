@@ -10,6 +10,9 @@
 #include <time.h>         /* struct itimerspec struct timespec
                              timer_create tier_settime clock_gettime */
 
+//durée de la simulation en seconde
+#define MAX_EXECUTION_TIME 10
+
 /* Pulse code definition */
 #define TASK_PULSE_CODE _PULSE_CODE_MINAVAIL
 
@@ -19,6 +22,7 @@ typedef struct thread_arg {
 	uint32_t id;        /* Task id */
 	uint32_t starttime; /* Global start time */
 	int32_t  chid;      /* Task channel id */
+	int run = 1;
 } thread_args_t;
 
 /* Pulse dumy structure */
@@ -81,7 +85,8 @@ void* task_pulse_handler(void* args) {
 	sync_sem  = ((thread_args_t*)args)->semaphore;
 	task_chid = ((thread_args_t*)args)->chid;
 
-	while(1<2) {
+
+	while(((thread_args_t*)args)->run==1) {
 		/* Get the pulse message */
 		rcvid = MsgReceive(task_chid, &msg, sizeof(pulse_msg_t), NULL);
 		if (0 == rcvid) {

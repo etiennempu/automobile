@@ -3,10 +3,32 @@
 
 
 
+void Navigation::position()
+{
 
+
+	pthread_mutex_lock(&globalmutex.mtx_ctrl_orientation);
+	float oriantation_rad = (ctrl_orientation) * (M_PI / 180) ;
+	pthread_mutex_unlock(&globalmutex.mtx_ctrl_orientation);
+
+
+	pthread_mutex_lock(&globalmutex.mtx_vitesse);
+	float Vx = vitesse * cos(oriantation_rad);
+	float Vy = vitesse * sin(oriantation_rad);
+	pthread_mutex_lock(&globalmutex.mtx_vitesse);
+
+
+	pthread_mutex_lock(&globalmutex.mtx_pos);
+	pos.x+= Vx*0.01;
+	pos.y+= Vy*0.01;
+	pthread_mutex_unlock(&globalmutex.mtx_pos);
+
+
+}
 
 void Navigation::compute_orientation()
 {
+	//printf("Hello from orientation\n");
 	// lire la consigne d'orientation
 	pthread_mutex_lock(&globalmutex.mtx_ctrl_orientation);
 	float ctrl_orientation_buffer = ctrl_orientation;
@@ -26,27 +48,31 @@ void Navigation::compute_orientation()
 void Navigation::compute_vitesse ()
 {	
 	// ajuste la vitesse à la consigne 
+	//printf("Hello from vitesse\n");
 
 	// récuperrer la consigne de vitesse
 	pthread_mutex_lock(&globalmutex.mtx_ctrl_vitesse);
 	float ctrl_vitesse_buffer = ctrl_vitesse;
 	pthread_mutex_unlock(&globalmutex.mtx_ctrl_vitesse);
+	//printf("----Nav.cpp---- ctrl_vitesse_buffer : %f\n", ctrl_vitesse_buffer );
 
     // Faire passer la vitesse à la consigne de manière douce (50 pas)
 	pthread_mutex_lock(&globalmutex.mtx_vitesse);
 	if ( vitesse < ctrl_vitesse_buffer)
 	{
-		vitesse += 5;
+		vitesse += 0.5;
 	}
 	else if ( vitesse > ctrl_vitesse_buffer)
 	{
-		vitesse -= 5;
+		vitesse -= 0.5;
 	}
 	pthread_mutex_lock(&globalmutex.mtx_vitesse);
 }
 
 void Navigation::compute_batterie()
 {	
+
+
 	//lire la vitesse
 	pthread_mutex_lock(&globalmutex.mtx_vitesse);
 	float vitesse_buffer = vitesse;
@@ -55,7 +81,10 @@ void Navigation::compute_batterie()
 	// calcule le niveau de batterie dans 20 m
 	// (en supposant que la voiture consomme 0.1% de batterie par km
 	pthread_mutex_lock(&globalmutex.mtx_lvl_batterie);
-	lvl_batterie =  lvl_batterie- (lvl_batterie * (0.1 * vitesse_buffer / 3.6)*100);
+	//lvl_batterie =  lvl_batterie- (lvl_batterie * (0.1 * vitesse_buffer / 3.6)*100);
+	lvl_batterie =  lvl_batterie- 0.01 ;
+
+	//printf("Hello from batterie: %f\n",lvl_batterie);
 	pthread_mutex_unlock(&globalmutex.mtx_lvl_batterie);
 	if (lvl_batterie <= 10)
 	{

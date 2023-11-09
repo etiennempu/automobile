@@ -15,8 +15,7 @@ using namespace std;
 #define CTRL_PRINT_PERIOD (1000)
 #define CTRL_CONTINUS_PERIOD (10)
 
-//durée de la simulation en seconde
-#define MAX_EXECUTION_TIME 1000
+
 
 
 // Data structure used for the task data
@@ -64,24 +63,29 @@ int main(void) {
 
     TaskData *data = new TaskData;
 
-	//data->myNav.Navigation();
-
 	coord_t Position;
 	Position.x=0;
 	Position.y=0;
 
-
-
-	data->LvlBatterie=60;
+	data->LvlBatterie=0;
 	data->Position = Position;
 	data->My_PathMap.genDest(data->Position, data->FinalDest); // donner la destination finale initiale
 	data->My_PathMap.genWp(data->Position, data->FinalDest, data->Next_dest);
 	data->Next_orientation = compute_orientation(data->Position, data->Next_dest);
 	// commencer a se mettre en routes
 	data->Next_vitesse = 80;
-	data->LastPhotos = data->Position;
+	data->LastPhotos = Position;
 	data->EtatBatterie = false ;
-	//data->final_dest=0;
+	data->my_Nav.alarm10 = 0;
+	data->my_Nav.alarm80 = 0;
+
+	data->my_Nav.ctrl_charge = 0;
+	data->my_Nav.ctrl_orientation = data->Next_orientation;
+	data->my_Nav.ctrl_vitesse = data->Next_vitesse;
+
+	data->my_Nav.lvl_batterie = 60;
+
+	data->my_Nav.pos = Position;
 
 	/////timer
 	struct timespec tp;
@@ -126,10 +130,11 @@ int main(void) {
     struct sched_param photo_param;
     struct sched_param print_param;
 
-    continus_param.sched_priority = 50; // Priorité élevée pour la tâche continus
-    control_param.sched_priority = 30;  // Priorité moyenne pour la tâche de contrôle
-    photo_param.sched_priority = 30;    // Priorité basse pour la tâche de photo
-    print_param.sched_priority = 20;    // Priorité moyenne pour la tâche d'impression
+    continus_param.sched_priority = 3; // Priorité élevée pour la tâche continus
+    control_param.sched_priority = 5;  // Priorité moyenne pour la tâche de contrôle
+    photo_param.sched_priority = 5;    // Priorité basse pour la tâche de photo
+    print_param.sched_priority = 2;    // Priorité moyenne pour la tâche d'impression
+
 
 	//les attributs de planification avec les priorités
     pthread_attr_t continus_attr;
@@ -157,15 +162,17 @@ int main(void) {
 	pthread_attr_setschedparam(&print_attr, &print_param);
 
 
+
 	/* Tasks arguments */
 	thread_args_t task_control_args;
 	thread_args_t task_photo_args;
 	thread_args_t task_print_args;
 	thread_args_t task_continus_args;
+	thread_args_t task_nav2_args;
 
 
 	/* Get the start time */
-	if(0 != clock_gettime(CLOCK_REALTIME, &tp)) {
+	if(0 != clock_gettime(CLOCK_MONOTONIC, &tp)) {
 		/* Print error */
 		printf("Could not get start time: %d\n", errno);
 		return EXIT_FAILURE;
@@ -234,28 +241,27 @@ int main(void) {
 		return EXIT_FAILURE;
 	}
 
+
 	void *params_control[2];
-	params_control[0] = &data;
+	params_control[0] = data;
 	params_control[1] = &task_control_args;
 
-	/* Create the different tasks and their associated pulse handlers */
-	if(0 != pthread_create(&task_control, &control_attr, FSM, params_control)) {
+	if(0 != pthread_create(&task_control, &control_attr, FSM , params_control)) {
 		/* Print error */
 		printf("Could not create thread: %d\n", errno);
 		return EXIT_FAILURE;
 	}
 	if(0 != pthread_create(&task_control_pulse_handler, NULL,
-			               task_pulse_handler, &task_control_args)) {
+							task_pulse_handler, &task_control_args)) {
 		/* Print error */
 		printf("Could not create thread: %d\n", errno);
 		return EXIT_FAILURE;
 	}
-
 	void *params_photo[2];
 	params_photo[0] = data;
 	params_photo[1] = &task_photo_args;
 
-	if(0 != pthread_create(&task_photo, &photo_attr, Take_photo, params_control)) {
+	if(0 != pthread_create(&task_photo, &photo_attr, Take_photo, params_photo)) {
 		/* Print error */
 		printf("Could not create thread: %d\n", errno);
 		return EXIT_FAILURE;
@@ -319,7 +325,7 @@ int main(void) {
 	}
 
 	if(0 != init_timer(&task_continus_event, &task_continus_itime, &task_continus_timer,
-			           task_print_args.chid, CTRL_CONTINUS_PERIOD)) {
+			           task_continus_args.chid, CTRL_CONTINUS_PERIOD)) {
 		/* Print error */
 		printf("Could not create timer: %d\n", errno);
 		return EXIT_FAILURE;
@@ -374,10 +380,12 @@ int main(void) {
     pthread_attr_destroy(&photo_attr);
     pthread_attr_destroy(&print_attr);
 
+	cout << "Threads ended" << endl;
+
 	data->My_PathMap.dumpImage("test.bmp"); // generer l'image finale
+
 	delete data;
-
-
+	cout << "Simulation ended" << endl;
 
 	//return EXIT_SUCCESS;
 }
@@ -444,18 +452,18 @@ void* Take_photo(void* data)
 	sync_sem  = ((thread_args_t*)params[1])->semaphore;
 	task_id   = ((thread_args_t*)params[1])->id;
 	starttime = ((thread_args_t*)params[1])->starttime;
-	uint32_t max_execution_time = MAX_EXECUTION_TIME;
-	uint32_t endtime = starttime + max_execution_time;
+	uint32_t max_execution_time = MAX_EXECUTION_TIME*1000;
+	uint32_t endtime =  starttime + max_execution_time;
 
-	int run=1;
+
 	/* Routine loop */
-	while(run==1) {
+	while(((thread_args_t*)params[1])->run==1) {
 		/* Wait for the pulse handler to release the semaphore */
 		if(0 == sem_wait(sync_sem)) {
 			/* Get the current time */
-			if(0 == clock_gettime(CLOCK_REALTIME, &tp)) {
-				elapsed_time = tp.tv_sec - starttime;
-				
+			if(0 == clock_gettime(CLOCK_MONOTONIC, &tp)) {
+				elapsed_time = (tp.tv_sec - starttime) * 1000 + tp.tv_nsec / 1000000;
+
 			    // Prendre une photo
 				if (compute_distance(d->LastPhotos,d->Position) >= 18)
 				{
@@ -471,9 +479,10 @@ void* Take_photo(void* data)
 
 				}
 
-				if (tp.tv_sec >= endtime) {
+				if (elapsed_time >= endtime) {
                     printf("Task %d has completed execution.\n", task_id);
-                    run=0;; // Exit the loop
+                    // Exit the loop
+                    ((thread_args_t*)params[1])->run=0;
                 }
 
 			}
@@ -498,9 +507,10 @@ void Navigation2(TaskData* data){
     TaskData *d = static_cast<TaskData*>(data);
 
 	// recuperation des donnees
-	pthread_mutex_lock(&globalmutex.mtx_vitesse);	//pas d'auto-complétion... C'est bisarre
-	d->Vitesse = d->my_Nav.vitesse;	//d->Vitesse = ttAnalogIn(VITESSE);
+	pthread_mutex_lock(&globalmutex.mtx_vitesse);
+	d->Vitesse = d->my_Nav.vitesse;
 	pthread_mutex_unlock(&globalmutex.mtx_vitesse);
+
 
 	pthread_mutex_lock(&globalmutex.mtx_pos);
 	d->Position.x = d->my_Nav.pos.x;
@@ -525,9 +535,7 @@ void Navigation2(TaskData* data){
 	pthread_mutex_unlock(&globalmutex.mtx_ctrl_vitesse);
 
 	pthread_mutex_lock(&globalmutex.mtx_ctrl_orientation);
-	d->my_Nav.orientation = d->Next_orientation;
-	printf("Next orientation: %f\n",d->Next_orientation);
-
+	d->my_Nav.ctrl_orientation = d->Next_orientation;
 	pthread_mutex_unlock(&globalmutex.mtx_ctrl_orientation);
 }
 
@@ -536,7 +544,7 @@ void* FSM(void* data){
     /*
     * Role : Machine a etat du systeme
     */
-   	void **params = (void **)data;
+	void **params = (void **)data;
 
     TaskData *d = static_cast<TaskData*>((TaskData*)params[0]);
 
@@ -550,91 +558,92 @@ void* FSM(void* data){
 	sync_sem  = ((thread_args_t*)params[1])->semaphore;
 	task_id   = ((thread_args_t*)params[1])->id;
 	starttime = ((thread_args_t*)params[1])->starttime;
-	uint32_t max_execution_time = MAX_EXECUTION_TIME;
-	uint32_t endtime = starttime + max_execution_time;
+	uint32_t max_execution_time = MAX_EXECUTION_TIME*1000;
+	uint32_t endtime =  starttime + max_execution_time;
 
-	int run=1;
+
 	/* Routine loop */
-
-	while(run==1) {
-		printf("Hello from FSM\n");
+	while(((thread_args_t*)params[1])->run==1) {
 		/* Wait for the pulse handler to release the semaphore */
 		if(0 == sem_wait(sync_sem)) {
 
 			/* Get the current time */
-			if(0 == clock_gettime(CLOCK_REALTIME, &tp)) {
-				elapsed_time = tp.tv_sec - starttime;
+			if(0 == clock_gettime(CLOCK_MONOTONIC, &tp)) {
+				elapsed_time = (tp.tv_sec - starttime) * 1000 + tp.tv_nsec / 1000000;
 
-			Navigation2(d);
-            // Calcul de la nouvelle orientation a prendre
-            d->Next_orientation = compute_orientation(d->Position, d->Next_dest);
 
-            if(d->final_dest>0)
-            {   
-                if(d->final_dest==600)
-                {
-                    d->Next_vitesse=80;
-                    d->final_dest=0;
-                }
-                else
-                {
-                    d->final_dest++;
-                }
-            }
-			
+				Navigation2(d);
+				// Calcul de la nouvelle orientation a prendre
+				d->Next_orientation = compute_orientation(d->Position, d->Next_dest);
 
-            /*else if(d->Next_vitesse==0)
-            {
-
-            }*/
-            else
-			{
-				// Arrivee proche
-				if ( compute_distance(d->Position, d->Next_dest) <= 100)
-            	{                
-                	d->Next_vitesse = 50;
-               
-            	}
-
-				if( compute_distance(d->Position, d->Next_dest) < 10)
-            	{
-                // Arrivee finale
-                	if ((d->FinalDest.x == d->Next_dest.x) && (d->FinalDest.y == d->Next_dest.y))
+				if(d->final_dest>0)
+				{
+					if(d->final_dest==600)
 					{
-						d->Next_vitesse = 0;
-						cout << endl << "arrivee dest finale : Wait 60 s:" << endl;
-						d->My_PathMap.genDest(d->Position, d->FinalDest);
-						d->My_PathMap.genWp(d->Position, d->FinalDest, d->Next_dest);
+						d->Next_vitesse=80;
+						d->final_dest=0;
+					}
+					else
+					{
 						d->final_dest++;
 					}
-                
-				// Recharge
-					else if (d->EtatBatterie)
-					{   
-						d->Next_vitesse = 0;             
-						cout << endl << "Arrivé a une borne :" << endl;
-						pthread_mutex_lock(&globalmutex.mtx_ctrl_charge);
-						d->my_Nav.ctrl_charge = 1; //ttAnalogOut(CTRL_CHARGE, true);
-						pthread_mutex_unlock(&globalmutex.mtx_ctrl_charge);
-						
-						d->EtatBatterie = false ;
+				}
+
+
+				/*else if(d->Next_vitesse==0)
+				{
+
+				}*/
+				else
+				{
+					// Arrivee proche
+					if ( compute_distance(d->Position, d->Next_dest) <= 100)
+					{
+						d->Next_vitesse = 50;
+
+					}
+
+					if( compute_distance(d->Position, d->Next_dest) < 10)
+					{
+					// Arrivee finale
+						if ((d->FinalDest.x == d->Next_dest.x) && (d->FinalDest.y == d->Next_dest.y))
+						{
+							d->Next_vitesse = 0;
+							cout << endl << "arrivee dest finale : Wait 60 s:" << endl;
+							d->My_PathMap.genDest(d->Position, d->FinalDest);
+							d->My_PathMap.genWp(d->Position, d->FinalDest, d->Next_dest);
+							d->final_dest++;
+						}
+
+					// Recharge
+						else if (d->EtatBatterie)
+						{
+							d->Next_vitesse = 0;
+							cout << endl << "Arrivé a une borne :" << endl;
+							pthread_mutex_lock(&globalmutex.mtx_ctrl_charge);
+							d->my_Nav.ctrl_charge = 1; //ttAnalogOut(CTRL_CHARGE, true);
+							pthread_mutex_unlock(&globalmutex.mtx_ctrl_charge);
+
+							d->EtatBatterie = false ;
+
+						}
+						// Arrivee wp
+						else
+						{
+							d->Next_vitesse = 80;
+							cout << endl << "Arrivee a un wp" << endl;
+							d->My_PathMap.genWp(d->Position, d->FinalDest, d->Next_dest);
+						}
+
+					}
+				}
+
+					if (elapsed_time >= endtime) {
+						printf("Task %d has completed execution.\n", task_id);
+						// Exit the loop
+						((thread_args_t*)params[1])->run=0;
 	
 					}
-					// Arrivee wp
-					else 
-					{                
-						d->Next_vitesse = 80;
-						cout << endl << "Arrivee a un wp" << endl;
-						d->My_PathMap.genWp(d->Position, d->FinalDest, d->Next_dest);   
-					} 
-
-            	}
-			}
-
-				if (tp.tv_sec >= endtime) {
-                    printf("Task %d has completed execution.\n", task_id);
-                    run=0; // Exit the loop
-                }
 
 			}
 			else {
@@ -666,31 +675,34 @@ void* print_state(void* data){
 	uint32_t        elapsed_time;
 
 	/* Get the arguments */
-	sync_sem  = ((thread_args_t*)params[1])->semaphore;
-	task_id   = ((thread_args_t*)params[1])->id;
-	starttime = ((thread_args_t*)params[1])->starttime;
-	uint32_t max_execution_time = MAX_EXECUTION_TIME;
+	sync_sem  = ((thread_args_t*)(params[1]))->semaphore;
+	task_id   = ((thread_args_t*)(params[1]))->id;
+	starttime = ((thread_args_t*)(params[1]))->starttime;
+	uint32_t max_execution_time = MAX_EXECUTION_TIME*1000;
 	uint32_t endtime = starttime + max_execution_time;
 
-	int run=1;
+
 	/* Routine loop */
-	while(run==1) {
+	while(((thread_args_t*)params[1])->run==1) {
 		/* Wait for the pulse handler to release the semaphore */
 		if(0 == sem_wait(sync_sem)) {
 			/* Get the current time */
-			if(0 == clock_gettime(CLOCK_REALTIME, &tp)) {
-				elapsed_time = tp.tv_sec - starttime;
-				
+			if(0 == clock_gettime(CLOCK_MONOTONIC, &tp)) {
+				elapsed_time = (tp.tv_sec - starttime) * 1000 + tp.tv_nsec / 1000000;
+
+
 				cout << endl << "Etat voiture :" << endl;
 				cout << "--> Vitesse     :" << d->Vitesse << "km/h" << endl;
 				cout << "--> Position    : (" << d->Position.x << ", " << d->Position.y << ")" << endl;
 				cout << "--> Orientation : " << d->Orientation << " degre" << endl;
 				cout << "--> Batterie    : " << d->LvlBatterie << endl;
-				cout << "--> NextDest    : (" << d->Next_dest.x << ", " << d->Next_dest.y << ") %" << endl;
+				cout << "--> NextDest    : (" << d->Next_dest.x << ", " << d->Next_dest.y << ")" << endl;
 
-				if (tp.tv_sec >= endtime) {
+				if (elapsed_time >= endtime) {
                     printf("Task %d has completed execution.\n", task_id);
-                    run=0;; // Exit the loop
+                    // Exit the loop
+                    ((thread_args_t*)params[1])->run=0;
+
                 }
 
 			}
@@ -767,10 +779,12 @@ void* systemeContinu(void* data){
 	uint32_t        elapsed_time;
 
 	/* Get the arguments */
-	task_id   = ((thread_args_t*)params[1])->id;
-	starttime = ((thread_args_t*)params[1])->starttime;
-	uint32_t max_execution_time = MAX_EXECUTION_TIME;
+	sync_sem  = ((thread_args_t*)(params[1]))->semaphore;
+	task_id   = ((thread_args_t*)(params[1]))->id;
+	starttime = ((thread_args_t*)(params[1]))->starttime;
+	uint32_t max_execution_time = MAX_EXECUTION_TIME*1000;
 	uint32_t endtime = starttime + max_execution_time;
+
 
 	if(0 != pthread_create(&t_alarm_10, NULL, alarm_10, d)) {
 			/* Print error */
@@ -783,14 +797,21 @@ void* systemeContinu(void* data){
 			//return EXIT_FAILURE;
 	}
 
-	int run=1;
+
 	/* Routine loop */
-	while(run==1) 
+	while(((thread_args_t*)params[1])->run==1)
 	{
+		if(0 == sem_wait(sync_sem)) {
 
 			/* Get the current time */
-			if(0 == clock_gettime(CLOCK_REALTIME, &tp)) 
-			{
+			if(0 == clock_gettime(CLOCK_MONOTONIC, &tp)) {
+
+				// mettre a jours le temps d'execution
+				//printf("@%d  sysCont ID=%d\n", elapsed_time, task_id);
+
+				elapsed_time = (tp.tv_sec - starttime) * 1000 + tp.tv_nsec / 1000000;
+
+
 				//----------------------------- Partie effective -------------------------
 				//cas de recharge de batterie
 				if ( d->my_Nav.read_ctrl_charge() == true)
@@ -808,28 +829,34 @@ void* systemeContinu(void* data){
 					pthread_join(t_alarm_10, NULL);
 				}
 
+
 				d->my_Nav.compute_batterie();
 				d->my_Nav.compute_orientation();
 				d->my_Nav.compute_vitesse();
+				d->my_Nav.position();
 							
 				//----------------------------- Fin partie effective ----------------------
 
-				// mettre a jours le temps d'execution
-				elapsed_time = tp.tv_sec - starttime;
-				
-				if (tp.tv_sec >= endtime) 
+
+				if (elapsed_time >= endtime)
 				{
                     printf("Task %d has completed execution.\n", task_id);
-                    run=0;; // Exit the loop
+                    // Exit the loop
+                    ((thread_args_t*)params[1])->run=0;
+
                 }
 
 			}
-			else 
+			else
 			{
 				/* Print error */
 				printf("Task %d could not get time: %d\n", task_id, errno);
 			}
 		
+		}
+		else {
+			printf("Task %d could not wait semaphore: %d\n", task_id, errno);
+		}
 	}
 
 

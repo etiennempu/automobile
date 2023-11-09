@@ -16,33 +16,19 @@
 #include <random>
 #include <cstring>
 #include <time.h>
-
-typedef struct
-{
-    double x;
-    double y;
-} coord_s;
-
-
-
+#include "genMap.h"
 
 class Navigation
 {
 	public:
-		/* les anciens
-		float lvl_batterie;
-		float target_orientation;
-		float nav_orientation;
-		float target_vitesse;
-		float nav_vitesse; 
-		*/
+
 		
-		// input
-		coord_s pos;
+
+		coord_t pos;
 		float vitesse;
 		float orientation;
 		float lvl_batterie;
-		// output
+
 		bool ctrl_charge;
 		float ctrl_vitesse;
 		float ctrl_orientation;
@@ -54,6 +40,7 @@ class Navigation
 		void compute_vitesse ();
 		void compute_batterie();
 		void recharge_batterie ();
+		void position ();
 
 		// permet de lire
 		bool read_ctrl_charge();

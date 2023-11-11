@@ -11,7 +11,7 @@
                              timer_create tier_settime clock_gettime */
 
 //durée de la simulation en seconde
-#define MAX_EXECUTION_TIME 10
+#define MAX_EXECUTION_TIME 5000
 
 /* Pulse code definition */
 #define TASK_PULSE_CODE _PULSE_CODE_MINAVAIL

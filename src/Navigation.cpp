@@ -13,8 +13,8 @@ void Navigation::position()
 
 
 	pthread_mutex_lock(&globalmutex.mtx_vitesse);
-	float Vx = vitesse * cos(oriantation_rad);
-	float Vy = vitesse * sin(oriantation_rad);
+	float Vx = vitesse/3.6 * sin(oriantation_rad);
+	float Vy = vitesse/3.6 * cos(oriantation_rad);
 	pthread_mutex_lock(&globalmutex.mtx_vitesse);
 
 
@@ -81,18 +81,21 @@ void Navigation::compute_batterie()
 	// calcule le niveau de batterie dans 20 m
 	// (en supposant que la voiture consomme 0.1% de batterie par km
 	pthread_mutex_lock(&globalmutex.mtx_lvl_batterie);
-	//lvl_batterie =  lvl_batterie- (lvl_batterie * (0.1 * vitesse_buffer / 3.6)*100);
-	lvl_batterie =  lvl_batterie- 0.01 ;
-
-	//printf("Hello from batterie: %f\n",lvl_batterie);
-	pthread_mutex_unlock(&globalmutex.mtx_lvl_batterie);
-	if (lvl_batterie <= 10)
+	pthread_mutex_lock(&globalmutex.mtx_alarm10);
+	if (lvl_batterie <= 10 && alarm10 ==false)
 	{
-		pthread_mutex_lock(&globalmutex.mtx_alarm10);
+
+		printf("alarme 10 true\n");
 		alarm10 = true;
-		pthread_mutex_unlock(&globalmutex.mtx_alarm10);
+
 	}
-	
+	else if (vitesse_buffer>49)
+	{
+
+		lvl_batterie =  lvl_batterie- 0.01 ;
+	}
+	pthread_mutex_unlock(&globalmutex.mtx_alarm10);
+	pthread_mutex_unlock(&globalmutex.mtx_lvl_batterie);
 }
 
 bool Navigation::read_alarm10()
@@ -128,15 +131,20 @@ bool Navigation::read_ctrl_charge()
 void Navigation::recharge_batterie ()
 {
 	pthread_mutex_lock(&globalmutex.mtx_lvl_batterie);
-	while(lvl_batterie<80)
+	if(lvl_batterie<80)
 	{		
-		lvl_batterie += 3;
+		lvl_batterie += 0.1;
+		pthread_mutex_unlock(&globalmutex.mtx_lvl_batterie);
 	}
-	pthread_mutex_unlock(&globalmutex.mtx_lvl_batterie);
-	// avertir que la batterie est pleine
-	pthread_mutex_lock(&globalmutex.mtx_alarm80);
-	alarm80 = true;
-	pthread_mutex_unlock(&globalmutex.mtx_alarm80);
+	else
+	{
+		// avertir que la batterie est pleine
+		pthread_mutex_lock(&globalmutex.mtx_alarm80);
+		alarm80 = true;
+		pthread_mutex_unlock(&globalmutex.mtx_alarm80);
+	}
+
+
 }
 
 

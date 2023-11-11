@@ -399,6 +399,18 @@ rgb_t PathMap::takePhoto(coord_t position)
 			genPx(x-i, y-j);
 		}
 	}
+    // // code rajoute
+    // /* initialize random seed: */
+    // srand ( time(NULL) );
+
+    // /* generate  number between 0 &nd 10 */
+    // int iSecret;
+    // iSecret = rand() % 10 + 1;
+    // /* if there is a rock on the way*/
+    // if (iSecret == 7)
+    // {
+
+    // }
 
 	rgb_t avgColour;
 

@@ -16,8 +16,6 @@ using namespace std;
 #define CTRL_CONTINUS_PERIOD (10)
 
 
-
-
 // Data structure used for the task data
 struct TaskData {
 	coord_t Position;
@@ -26,6 +24,7 @@ struct TaskData {
     float Orientation;
     coord_t Destination;
     bool EtatBatterie;
+    bool Chargement;
     float LvlBatterie;
     coord_t LastPhotos;   //position de la derniere photo
     bool EtatDestination;
@@ -39,6 +38,7 @@ struct TaskData {
     float Next_orientation;
     coord_t Next_dest;  //coordonnees de la nouvelle destination
 	Navigation my_Nav;
+	int sync_photo;
 };
 void* alarm_80(void* data);
 void* alarm_10(void* data);
@@ -49,6 +49,7 @@ void* Take_photo(void* data);
 float compute_distance(coord_t Position, coord_t Next_dest);
 float compute_orientation(coord_t Position, coord_t Next_Dest);
 void* systemeContinu(void* data);
+void* call_photo(void* data);
 
 continious_t globalmutex;
 
@@ -76,8 +77,12 @@ int main(void) {
 	data->Next_vitesse = 80;
 	data->LastPhotos = Position;
 	data->EtatBatterie = false ;
-	data->my_Nav.alarm10 = 0;
-	data->my_Nav.alarm80 = 0;
+	data->Chargement = false;
+	data->sync_photo = 0;
+
+
+	data->my_Nav.alarm10 = false;
+	data->my_Nav.alarm80 = false;
 
 	data->my_Nav.ctrl_charge = 0;
 	data->my_Nav.ctrl_orientation = data->Next_orientation;
@@ -106,6 +111,7 @@ int main(void) {
 	pthread_t task_print_pulse_handler;
 	pthread_t task_continus;
 	pthread_t task_continus_pulse_handler;
+	pthread_t task_call_photo;
 
 
 	/* Timers event structures */
@@ -129,11 +135,13 @@ int main(void) {
     struct sched_param control_param;
     struct sched_param photo_param;
     struct sched_param print_param;
+    struct sched_param call_photo_param;
 
     continus_param.sched_priority = 3; // Priorité élevée pour la tâche continus
     control_param.sched_priority = 5;  // Priorité moyenne pour la tâche de contrôle
     photo_param.sched_priority = 5;    // Priorité basse pour la tâche de photo
     print_param.sched_priority = 2;    // Priorité moyenne pour la tâche d'impression
+    call_photo_param.sched_priority = 4;    //
 
 
 	//les attributs de planification avec les priorités
@@ -141,12 +149,14 @@ int main(void) {
 	pthread_attr_t control_attr;
 	pthread_attr_t photo_attr;
 	pthread_attr_t print_attr;
+	pthread_attr_t call_photo_attr;
 
 	// Initialisation des attributs
 	pthread_attr_init(&continus_attr);
 	pthread_attr_init(&control_attr);
 	pthread_attr_init(&photo_attr);
 	pthread_attr_init(&print_attr);
+	pthread_attr_init(&call_photo_attr);
 
 	// les priorités pour les attributs de planification
 	pthread_attr_setschedpolicy(&continus_attr, SCHED_RR);
@@ -161,6 +171,9 @@ int main(void) {
 	pthread_attr_setschedpolicy(&print_attr, SCHED_RR);
 	pthread_attr_setschedparam(&print_attr, &print_param);
 
+	pthread_attr_setschedpolicy(&call_photo_attr, SCHED_RR);
+	pthread_attr_setschedparam(&call_photo_attr, &call_photo_param);
+
 
 
 	/* Tasks arguments */
@@ -168,7 +181,6 @@ int main(void) {
 	thread_args_t task_photo_args;
 	thread_args_t task_print_args;
 	thread_args_t task_continus_args;
-	thread_args_t task_nav2_args;
 
 
 	/* Get the start time */
@@ -199,6 +211,7 @@ int main(void) {
 		printf("Could not get init semaphore: %d\n", errno);
 		return EXIT_FAILURE;
 	}
+
 
 	/* Initialize the tasks arguments */
 	task_control_args.id   = 0;
@@ -261,6 +274,7 @@ int main(void) {
 	params_photo[0] = data;
 	params_photo[1] = &task_photo_args;
 
+
 	if(0 != pthread_create(&task_photo, &photo_attr, Take_photo, params_photo)) {
 		/* Print error */
 		printf("Could not create thread: %d\n", errno);
@@ -302,6 +316,14 @@ int main(void) {
 		printf("Could not create thread: %d\n", errno);
 		return EXIT_FAILURE;
 	}
+
+
+	if(0 != pthread_create(&task_call_photo, &call_photo_attr, call_photo, (void*)data)) {
+		/* Print error */
+		printf("Could not create thread: %d\n", errno);
+		return EXIT_FAILURE;
+	}
+
 
 	/* Create timers */
 	if(0 != init_timer(&task_control_event, &task_control_itime, &task_control_timer,
@@ -430,11 +452,24 @@ float compute_distance(coord_t Position, coord_t Next_dest)
     return dist;
 }
 
+void* call_photo(void* data){
+    /*
+    * Role : prendre les photos
+    */
+   	void **params = (void **)data;
+    TaskData *d = static_cast<TaskData*>((TaskData*)params);
+
+    while(d->sync_photo!=3)
+    {
+    	while(d->sync_photo!=1){}
+        d->My_PathMap.takePhoto(d->LastPhotos);
+        d->sync_photo=0;
+    }
+}
 
 void* Take_photo(void* data)
 {
-
-	    /*
+	/*
     * Role : prendre des photos
     * Note : cette tache doit etre reveillee suffisament regulierement pour ne pas rater le coche
     */
@@ -454,7 +489,7 @@ void* Take_photo(void* data)
 	starttime = ((thread_args_t*)params[1])->starttime;
 	uint32_t max_execution_time = MAX_EXECUTION_TIME*1000;
 	uint32_t endtime =  starttime + max_execution_time;
-
+	int* sync_photo = ((int*)params[2]);
 
 	/* Routine loop */
 	while(((thread_args_t*)params[1])->run==1) {
@@ -467,22 +502,22 @@ void* Take_photo(void* data)
 			    // Prendre une photo
 				if (compute_distance(d->LastPhotos,d->Position) >= 18)
 				{
-					d->My_PathMap.takePhoto(d->Position);
+
+
 					d->LastPhotos = d->Position;
-					//ttAnalogOut(CTRL_ANALYSE_PH, 1);
-
-					// Analyse terminee --> Ne plus prendre photo
-					if(d->AnalyseTerminee == 1)
+					//cas où la photo est finie
+					if(d->sync_photo==0)
 					{
-						//ttAnalogOut(CTRL_ANALYSE_PH, 0);
+						d->sync_photo=1;
 					}
-
+					//sinon on skip cette photo;
 				}
 
 				if (elapsed_time >= endtime) {
                     printf("Task %d has completed execution.\n", task_id);
                     // Exit the loop
                     ((thread_args_t*)params[1])->run=0;
+                    d->sync_photo=3;
                 }
 
 			}
@@ -590,10 +625,10 @@ void* FSM(void* data){
 				}
 
 
-				/*else if(d->Next_vitesse==0)
+				else if(d->Next_vitesse==0)
 				{
 
-				}*/
+				}
 				else
 				{
 					// Arrivee proche
@@ -618,10 +653,11 @@ void* FSM(void* data){
 					// Recharge
 						else if (d->EtatBatterie)
 						{
+
 							d->Next_vitesse = 0;
 							cout << endl << "Arrivé a une borne :" << endl;
 							pthread_mutex_lock(&globalmutex.mtx_ctrl_charge);
-							d->my_Nav.ctrl_charge = 1; //ttAnalogOut(CTRL_CHARGE, true);
+							d->my_Nav.ctrl_charge = 1;
 							pthread_mutex_unlock(&globalmutex.mtx_ctrl_charge);
 
 							d->EtatBatterie = false ;
@@ -644,7 +680,6 @@ void* FSM(void* data){
 						((thread_args_t*)params[1])->run=0;
 	
 					}
-
 			}
 			else {
 				/* Print error */
@@ -715,8 +750,6 @@ void* print_state(void* data){
 			printf("Task %d could not wait semaphore: %d\n", task_id, errno);
 		}
 	}
-
-	
 }
 
 
@@ -725,11 +758,6 @@ void* alarm_10(void* data) {
     * Role : s'execute en cas d'alarme 10% de batterie
     */
     TaskData *d = static_cast<TaskData*>(data);
-
-	// repasser l'alarme10 à 0
-	pthread_mutex_lock(&globalmutex.mtx_alarm10);
-	d->my_Nav.alarm10 = false;
-	pthread_mutex_unlock(&globalmutex.mtx_alarm10);
 
 	cout << "Alarme 10%" << endl;
 	// mettre a jours les nouvelles valeurs
@@ -756,6 +784,9 @@ void* alarm_80(void* data) {
 	pthread_mutex_unlock(&globalmutex.mtx_ctrl_charge);
 	d->Next_vitesse = 80;
 	d->My_PathMap.genWp(d->Position, d->FinalDest, d->Next_dest);
+	pthread_mutex_lock(&globalmutex.mtx_alarm10);
+	d->my_Nav.alarm10 = false;
+	pthread_mutex_unlock(&globalmutex.mtx_alarm10);
 
 }
 
@@ -786,18 +817,6 @@ void* systemeContinu(void* data){
 	uint32_t endtime = starttime + max_execution_time;
 
 
-	if(0 != pthread_create(&t_alarm_10, NULL, alarm_10, d)) {
-			/* Print error */
-			printf("Could not create thread: %d\n", errno);
-			//return EXIT_FAILURE;
-	}
-	if(0 != pthread_create(&t_alarm_80, NULL, alarm_80, d)) {
-			/* Print error */
-			printf("Could not create thread: %d\n", errno);
-			//return EXIT_FAILURE;
-	}
-
-
 	/* Routine loop */
 	while(((thread_args_t*)params[1])->run==1)
 	{
@@ -816,24 +835,42 @@ void* systemeContinu(void* data){
 				//cas de recharge de batterie
 				if ( d->my_Nav.read_ctrl_charge() == true)
 				{
+
 					d->my_Nav.recharge_batterie();
 					// attendre que la batterie soit pleine
-					while (d->my_Nav.read_alarm80() == false){}					
-					pthread_join(t_alarm_80, NULL);
+					if (d->my_Nav.read_alarm80() == false){
+					}
+					else
+					{
+						if(0 != pthread_create(&t_alarm_80, NULL, alarm_80, d)) {
+								/* Print error */
+								printf("Could not create thread: %d\n", errno);
+								//return EXIT_FAILURE;
+						}
+						pthread_join(t_alarm_80, NULL);
+						d->Chargement =false;
+					}
+
 				}
 				
 				// cas plus de batterie
-				if (d->my_Nav.read_alarm10() == true )
+				else if (d->my_Nav.read_alarm10() == true && d->Chargement == false)
 				{
-					//lancer le thread d'alarme
+					d->Chargement =true;
+					if(0 != pthread_create(&t_alarm_10, NULL, alarm_10, d)) {
+							/* Print error */
+							printf("Could not create thread: %d\n", errno);
+							//return EXIT_FAILURE;
+					}
 					pthread_join(t_alarm_10, NULL);
 				}
-
 
 				d->my_Nav.compute_batterie();
 				d->my_Nav.compute_orientation();
 				d->my_Nav.compute_vitesse();
 				d->my_Nav.position();
+
+
 							
 				//----------------------------- Fin partie effective ----------------------
 

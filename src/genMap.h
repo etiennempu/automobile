@@ -8,6 +8,7 @@
 #include <random>
 #include <cstring>
 #include <time.h>
+#include <cstdlib>
 
 
 #define SIMU_ACCEL 1

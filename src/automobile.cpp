@@ -19,10 +19,8 @@ using namespace std;
 // Data structure used for the task data
 struct TaskData {
 	coord_t Position;
-    coord_t OldPosition;
     float Vitesse;
     float Orientation;
-    coord_t Destination;
     bool EtatBatterie;
     bool Chargement;
     float LvlBatterie;
@@ -39,6 +37,18 @@ struct TaskData {
     coord_t Next_dest;  //coordonnees de la nouvelle destination
 	Navigation my_Nav;
 	int sync_photo;
+
+	int EtatRocher;
+    coord_t tmpNext_dest;
+    coord_t EtapeRetour;
+
+    int photoTake;
+    int photoMiss;
+    int phtotSkip;
+
+
+
+
 };
 void* alarm_80(void* data);
 void* alarm_10(void* data);
@@ -91,6 +101,15 @@ int main(void) {
 	data->my_Nav.lvl_batterie = 60;
 
 	data->my_Nav.pos = Position;
+
+	data->EtatRocher=0;
+	data->tmpNext_dest=Position;
+	data->EtapeRetour=Position;
+
+	data->photoMiss=0;
+	data->phtotSkip=0;
+	data->photoTake=0;
+
 
 	/////timer
 	struct timespec tp;
@@ -408,6 +427,9 @@ int main(void) {
 
 	delete data;
 	cout << "Simulation ended" << endl;
+	printf("photoMiss: %d\n",data->photoMiss);
+	printf("photoSkip: %d\n",data->phtotSkip);
+	printf("photoTake: %d\n",data->photoTake);
 
 	//return EXIT_SUCCESS;
 }
@@ -461,9 +483,46 @@ void* call_photo(void* data){
 
     while(d->sync_photo!=3)
     {
-    	while(d->sync_photo!=1){}
-        d->My_PathMap.takePhoto(d->LastPhotos);
-        d->sync_photo=0;
+    	if(d->sync_photo==1){
+            d->My_PathMap.takePhoto(d->LastPhotos);
+            d->sync_photo=0;
+
+    		// code rajoute
+    	     srand ( time(NULL) );
+
+    	     /* simulation de détéction d'un rocher */
+    	     int iSecret;
+    	     iSecret = rand() % 50 + 1;
+    	     if (iSecret == 7 && d->EtatRocher==0)
+    	     {
+    	    		pthread_mutex_lock(&globalmutex.mtx_ctrl_orientation);
+    	    		float oriantation_rad = (d->Orientation) * (M_PI / 180) ;
+    	    		pthread_mutex_unlock(&globalmutex.mtx_ctrl_orientation);
+
+    	    	 	d->My_PathMap.Rooks(d->LastPhotos,oriantation_rad);
+
+    	    		d->tmpNext_dest=d->Next_dest;
+
+
+
+    	    		float dx = 50 * sin(oriantation_rad+M_PI/4);
+    	    		float dy = 50 * cos(oriantation_rad+M_PI/4);
+
+    	    		d->Next_dest.x=d->LastPhotos.x+dx;
+    	    		d->Next_dest.y=d->LastPhotos.y+dy;
+
+    	    		dx = 40 * sin(oriantation_rad);
+    	    		dy = 40 * cos(oriantation_rad);
+
+    	    		d->EtapeRetour.x=d->LastPhotos.x+dx;
+    	    		d->EtapeRetour.y=d->LastPhotos.y+dy;
+
+    	    		d->EtatRocher=1;
+
+
+    	     }
+    	}
+
     }
 }
 
@@ -502,7 +561,11 @@ void* Take_photo(void* data)
 			    // Prendre une photo
 				if (compute_distance(d->LastPhotos,d->Position) >= 18)
 				{
-
+					d->photoTake++;
+					if(compute_distance(d->LastPhotos,d->Position) > 22)
+					{
+						d->photoMiss++;
+					}
 
 					d->LastPhotos = d->Position;
 					//cas où la photo est finie
@@ -511,6 +574,13 @@ void* Take_photo(void* data)
 						d->sync_photo=1;
 					}
 					//sinon on skip cette photo;
+
+					else
+					{
+						d->phtotSkip++;
+						//sinon on skip cette photo;
+
+					}
 				}
 
 				if (elapsed_time >= endtime) {
@@ -666,9 +736,27 @@ void* FSM(void* data){
 						// Arrivee wp
 						else
 						{
-							d->Next_vitesse = 80;
-							cout << endl << "Arrivee a un wp" << endl;
-							d->My_PathMap.genWp(d->Position, d->FinalDest, d->Next_dest);
+							if(d->EtatRocher==0)
+							{
+								d->Next_vitesse = 80;
+								cout << endl << "Arrivee a un wp" << endl;
+								d->My_PathMap.genWp(d->Position, d->FinalDest, d->Next_dest);
+
+							}
+							else if(d->EtatRocher==1)
+							{
+								d->EtatRocher=2;
+								d->Next_dest=d->EtapeRetour;
+								cout << endl << "Rocher contourner" << endl;
+
+							}
+							else
+							{
+								d->Next_vitesse = 80;
+								d->EtatRocher=0;
+								d->Next_dest=d->tmpNext_dest;
+								cout << endl << "De retour sur la route" << endl;
+							}
 						}
 
 					}
@@ -716,6 +804,24 @@ void* print_state(void* data){
 	uint32_t max_execution_time = MAX_EXECUTION_TIME*1000;
 	uint32_t endtime = starttime + max_execution_time;
 
+	FILE* fichierV = NULL;
+
+	fichierV = fopen("Vitesse.txt", "w");
+
+	if (fichierV != NULL)
+	{
+		fprintf(fichierV,"Vitesse:\n");
+	}
+
+	FILE* fichierB = NULL;
+
+	fichierB = fopen("Batterie.txt", "w");
+
+	if (fichierB != NULL)
+	{
+		fprintf(fichierB,"Batterie:\n");
+	}
+
 
 	/* Routine loop */
 	while(((thread_args_t*)params[1])->run==1) {
@@ -732,11 +838,18 @@ void* print_state(void* data){
 				cout << "--> Orientation : " << d->Orientation << " degre" << endl;
 				cout << "--> Batterie    : " << d->LvlBatterie << endl;
 				cout << "--> NextDest    : (" << d->Next_dest.x << ", " << d->Next_dest.y << ")" << endl;
+				fprintf(fichierV,"%f\n",d->Vitesse);
+				fprintf(fichierB,"%f\n",d->LvlBatterie);
+
 
 				if (elapsed_time >= endtime) {
                     printf("Task %d has completed execution.\n", task_id);
                     // Exit the loop
                     ((thread_args_t*)params[1])->run=0;
+                    fclose(fichierV);
+                    fclose(fichierB);
+
+
 
                 }
 

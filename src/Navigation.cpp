@@ -92,7 +92,7 @@ void Navigation::compute_batterie()
 	else if (vitesse_buffer>49)
 	{
 
-		lvl_batterie =  lvl_batterie- 0.01 ;
+		lvl_batterie =  lvl_batterie- 0.001 ;
 	}
 	pthread_mutex_unlock(&globalmutex.mtx_alarm10);
 	pthread_mutex_unlock(&globalmutex.mtx_lvl_batterie);

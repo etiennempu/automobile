@@ -383,7 +383,65 @@ void PathMap::genPx(int32_t coordX, int32_t coordY)
     }
     setPx(coordX, coordY, this->textures[decideTexture(proba)]);
 }
+void PathMap::Rooks(coord_t position,float oriantation_rad)
+{
 
+	float dx = 40 * sin(oriantation_rad);
+	float dy = 40 * cos(oriantation_rad);
+
+	coord_t Rocher;
+
+	Rocher.x=position.x+dx;
+	Rocher.y=position.y+dy;
+
+	int32_t x = (int32_t) Rocher.x / PX_TO_M;
+	int32_t y = (int32_t) Rocher.y / PX_TO_M;
+	uint8_t BROWN_R = 139;
+	uint8_t BROWN_G = 69;
+	uint8_t BROWN_B = 19;
+	rgb_t BROWN;
+	BROWN.b = BROWN_B;
+	BROWN.g = BROWN_G;
+	BROWN.r = BROWN_R;
+
+    for(int i = -4; i <= 4; ++i)
+    {
+        for(int j = -8; j <= 8; ++j)
+        {
+        	if (i * i + j * j <= 9)
+        	{
+        		setPx(x + i, y + j, BROWN);
+        	}
+        }
+
+    }
+
+
+
+	coord_t tmp;
+
+	dx = 50 * sin(oriantation_rad+M_PI/4);
+	dy = 50 * cos(oriantation_rad+M_PI/4);
+
+	tmp.x=position.x+dx;
+	tmp.y=position.y+dy;
+
+    this->paintRoad(position.x, position.y, tmp.x, tmp.y);
+
+	coord_t tmp_f;
+
+	dx = 80 * sin(oriantation_rad);
+	dy = 80 * cos(oriantation_rad);
+
+	tmp_f.x=position.x+dx;
+	tmp_f.y=position.y+dy;
+    this->paintRoad(tmp.x, tmp.y, tmp_f.x, tmp_f.y);
+
+
+
+
+
+}
 rgb_t PathMap::takePhoto(coord_t position)
 {
 	int32_t x = (int32_t) position.x / PX_TO_M;
@@ -399,18 +457,7 @@ rgb_t PathMap::takePhoto(coord_t position)
 			genPx(x-i, y-j);
 		}
 	}
-    // // code rajoute
-    // /* initialize random seed: */
-    // srand ( time(NULL) );
 
-    // /* generate  number between 0 &nd 10 */
-    // int iSecret;
-    // iSecret = rand() % 10 + 1;
-    // /* if there is a rock on the way*/
-    // if (iSecret == 7)
-    // {
-
-    // }
 
 	rgb_t avgColour;
 

@@ -67,6 +67,7 @@ class PathMap {
         void genDest(coord_t actualPos, coord_t &dest);
         void getClosestStation(coord_t actualPos, coord_t &stationPos);
         void dumpImage(const char* file_name);
+        void Rooks(coord_t position, float oriantation_rad);
 
     private:
         rgb_t **img;
